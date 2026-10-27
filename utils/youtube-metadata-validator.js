@@ -2,8 +2,9 @@ const MAX_TITLE_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_TAGS_LENGTH = 450;
 
-function removeControlCharacters(value, replacement = '') {
+function removeControlCharacters(value, replacement = '', preserveNewlines = false) {
   return Array.from(String(value ?? '')).map(character => {
+    if (preserveNewlines && character === '\n') return '\n';
     const code = character.charCodeAt(0);
     return code <= 31 || code === 127 ? replacement : character;
   }).join('');
@@ -11,6 +12,22 @@ function removeControlCharacters(value, replacement = '') {
 
 function cleanText(value) {
   return removeControlCharacters(value, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// YouTube descriptions use blank lines between sections, so newlines are kept
+// while other control characters, runs of spaces, and extra blank lines are
+// normalised away.
+function cleanDescription(value) {
+  return removeControlCharacters(
+    String(value ?? '').replace(/\r\n?/g, '\n'),
+    '',
+    true
+  )
+    .split('\n')
+    .map(line => line.replace(/[^\S\n]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function normalizeTags(input) {
@@ -37,7 +54,7 @@ function normalizeYouTubeMetadata(metadata = {}) {
   const snippet = metadata.snippet || metadata.seo || metadata;
   return {
     title: cleanText(snippet.title).slice(0, MAX_TITLE_LENGTH),
-    description: removeControlCharacters(snippet.description).slice(0, MAX_DESCRIPTION_LENGTH).trim(),
+    description: cleanDescription(snippet.description).slice(0, MAX_DESCRIPTION_LENGTH),
     tags: normalizeTags(snippet.tags),
     categoryId: String(snippet.categoryId ?? snippet.metadata?.category ?? '22').trim(),
     defaultLanguage: String(snippet.defaultLanguage ?? snippet.metadata?.language ?? 'en').trim(),

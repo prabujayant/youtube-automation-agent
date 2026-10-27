@@ -70,5 +70,6 @@ jobs:
           path: |
             data/ranked-shorts/**/final.mp4
             data/ranked-shorts/**/thumbnail.jpg
+            data/ranked-shorts/**/episode.json
           if-no-files-found: ignore
           retention-days: 14

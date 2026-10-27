@@ -477,7 +477,8 @@ class RankedShortsService {
     const title = truncate(meta.title || `${topic} #shorts`, 90);
     const tags = [...new Set([
       ...(Array.isArray(meta.tags) ? meta.tags : []),
-      'shorts', 'ranking',
+      'shorts',
+      ...(showcase ? [] : ['ranking']),
       ...topic.split(/[^a-z0-9]+/i).filter(word => word.length > 3).slice(0, 6)
     ])].map(tag => String(tag).replace(/^#/, '').trim()).filter(Boolean).slice(0, 15);
     return {

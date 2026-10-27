@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed YouTube descriptions losing their line breaks and showcase videos carrying an irrelevant `#ranking` tag; the metadata validator now preserves blank-line-separated sections
 - Added a GitHub Actions workflow (`.github/workflows/shorts.yml`) that renders and uploads the twice-daily destination Shorts on a 01:30/13:30 UTC cron, with a manual dispatch dry-run and rendered MP4 artifacts
 - Added Ranked Shorts Studio: a licensed-clip countdown pipeline that plans, trims, crops to 9:16, burns `#N` captions, keeps the original clip audio, and renders a real MP4 plus thumbnail and SRT (`npm run shorts:ranked`)
 - Every ranked Short clip requires a supported licence and a source note before planning, rendering, or approval; credits are written into the description

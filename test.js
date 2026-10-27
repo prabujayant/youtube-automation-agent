@@ -1022,6 +1022,16 @@ class SystemTest {
       throw new Error('YouTube metadata normalization is unsafe or invalid');
     }
 
+    const formatted = validateYouTubeMetadata({
+      title: 'Line breaks',
+      description: 'First line.\n\n📍 Venice Italy\n🌍 Save this for your next trip!\n\n#shorts',
+      tags: ['travel', 'shorts', 'venice']
+    });
+    if (!formatted.valid) throw new Error('A description with line breaks should be valid');
+    if (formatted.value.description !== 'First line.\n\n📍 Venice Italy\n🌍 Save this for your next trip!\n\n#shorts') {
+      throw new Error('YouTube descriptions lost their line breaks during validation');
+    }
+
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-readiness-db-'));
     const persistenceDb = new Database();
     persistenceDb.dbPath = path.join(directory, 'readiness.db');
@@ -2053,6 +2063,12 @@ class SystemTest {
         throw new Error('Showcase plan did not persist its clip plan');
       }
       if (!/^Discover/.test(planned.title)) throw new Error('Showcase title is not in the Discover format');
+      if (!planned.description.includes('\n📍 Venice Italy')) {
+        throw new Error('Showcase description lost its line breaks');
+      }
+      if ((planned.tags || []).some(tag => String(tag).toLowerCase() === 'ranking')) {
+        throw new Error('Showcase tags should not include the ranked-format "ranking" tag');
+      }
       if (planned.clipPlan.map(clip => clip.rank).join(',') !== '1,2,3') {
         throw new Error('Showcase order should be best-first (opposite of countdown order)');
       }
