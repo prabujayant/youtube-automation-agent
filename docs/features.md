@@ -8,6 +8,7 @@ Detailed walkthroughs of each part of YouTube Automation Agent. For installation
 - [AI video generation](#ai-video-generation)
 - [Scene Repair Studio and narration](#scene-repair-studio-and-narration)
 - [Shorts Repurposing Studio](#shorts-repurposing-studio)
+- [Ranked Shorts Studio](#ranked-shorts-studio)
 - [Evidence desk](#evidence-desk)
 - [Discoverability preflight](#discoverability-preflight)
 - [Learning loop](#learning-loop)
@@ -71,6 +72,64 @@ Open **Shorts Repurposing Studio** inside Review Studio and choose **Create 3 Sh
 Choose a blurred-canvas, center-crop, or stacked-focus layout, then render a real 9:16 MP4 with mobile-safe burned captions and a separate SRT file. The source video and narration are reused, so the default workflow does not spend new image, video, or TTS credits. Changing the layout invalidates the prior render and requires a fresh local render.
 
 Every Short has its own approval and schedule. Scheduling remains blocked until the source production is approved, provenance is resolved, uploaded media rights are confirmed, every source scene is current, and the operator explicitly confirms the Short's privacy and publish time. Published Shorts retain their parent-production identity while their analytics use a separate Shorts baseline.
+
+## Ranked Shorts Studio
+
+Ranked Shorts Studio builds the countdown format used by clip-ranking Shorts channels: a vertical 9:16 Short that opens with a hook, then plays licensed clips from #N down to #1 with the original clip audio and burned-in rank captions.
+
+Put your clips in a folder with an optional `clips.json` manifest:
+
+```json
+{
+  "clips": [
+    { "file": "01.mp4", "title": "Croc steals the boat", "license": "owned",
+      "source": "self-recorded", "start": 2, "duration": 7 },
+    { "file": "02.mp4", "title": "Dog opens the fridge", "license": "licensed",
+      "source": "licence agreement 42", "start": 0, "duration": 6 }
+  ]
+}
+```
+
+Each clip needs a supported licence (`owned`, `licensed`, `cc-by`, `cc-by-sa`, `public-domain`, or `permission`) and a source note. Clips without both are rejected before anything is rendered, and the credits are written into the description. The local-folder workflow never downloads third-party footage.
+
+Stock mode uses a free **stock-footage API** — Pixabay (instant key from your account) or Pexels. Add `PIXABAY_API_KEY` or `PEXELS_API_KEY` to `.env`, then let the agent search, download, and license-track the clips automatically. Both licences permit free use; every download keeps its licence source in the episode description:
+
+```bash
+npm run shorts:ranked -- stock --topic "Dogs failing at fetch" --count 7
+npm run shorts:ranked -- stock --topic "Dogs failing at fetch" --queries "dog fail,dog pool" --music ./music.mp3
+```
+
+Clips are stored under `data/footage/<provider>/` and reused from cache. Optional `--music <file>` loops a local music bed under the clips (the mix stays at low volume so clip audio remains audible).
+
+### Destination showcase format
+
+`--format showcase` swaps the countdown for a TravelWonders-style destination showcase: best-first scenic order, no hook card, no rank captions — just rapid scenic cuts with a small persistent overlay (for example `♥ Venice`) burned top-center from an ASS file. Titles follow the "Discover <destination>…!" pattern:
+
+```bash
+npm run shorts:ranked -- stock --topic "Venice Italy" --format showcase --render
+```
+
+Showcase defaults: 8 clips of 3 seconds (24 seconds total), AI-written overlay/title/description/tags when a text provider is configured, and the thumbnail taken from the first clip. `--overlay "♥ Venice"` overrides the overlay text; colour flag emoji do not render in libass, so the heart is drawn as a red `♥` glyph instead.
+
+### Music beds
+
+`--music auto` (the showcase default) picks a free CC-BY track from the built-in Incompetech catalog — Kevin MacLeod's music, among the most-used Shorts soundtracks — rotates the choice per day, downloads it once into `data/footage/music/`, and writes the attribution line into the description automatically. Drop your own `.mp3`/`.m4a`/`.wav`/`.ogg` files into `data/footage/music-library/` and the pipeline rotates through those instead (credited as "from the channel music library"). Without either, showcase episodes fall back to a locally synthesized ambient pad; ranked episodes keep the original clip audio only.
+
+### Daily ranked Shorts automation
+
+Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, or `PUT /api/settings` with `{"ranked_shorts_automation": true}`) and the agent runs a morning batch at 07:00: it picks two different destinations from `ranked_shorts_topics` (or the built-in 16-place list), collects eight licensed stock clips per episode, plans and renders each showcase with a rotating free music bed, and schedules the uploads 12 hours apart. Episodes are auto-approved from the licence-tagged stock clips and upload through the publish queue (checked every 15 minutes) with `ranked_shorts_privacy` (default `public`). Tune the cadence with `ranked_shorts_per_day`, `ranked_shorts_gap_hours`, and `ranked_shorts_privacy`. An evening top-up run at 19:00 creates a missing episode if the morning batch failed part-way, and the manual approval flow stays available for episodes you create yourself in the dashboard or CLI.
+
+Plan, render, and schedule from the CLI, the API, or the **Ranked Shorts** dashboard view:
+
+```bash
+npm run shorts:ranked -- plan --dir ./my-clips --topic "Funniest canal moments" --count 7
+npm run shorts:ranked -- render <episodeId>
+npm run shorts:ranked -- approve <episodeId> --confirm --at "2026-10-27T14:00:00Z"
+```
+
+Planning uses your configured text provider to choose and order the clips from their titles and notes, then writes the hook, captions, title, description, and tags. Without a text provider it falls back to the manifest order or score. Descriptions stay clean and human-readable: a short intro, the destination line, the music credit, one footage-licence line, and up to five hashtags. Per-clip licence provenance lives in the episode record, and only CC-BY/CC-BY-SA footage (which requires attribution) is listed clip by clip. Rendering copies the source clips into `data/ranked-shorts/<episodeId>/`, trims each to its slot, fits them full-bleed (or as a blurred canvas), builds a hook card for the ranked format, burns the overlay or `#N` countdown captions, and produces the final MP4, thumbnail, and SRT/ASS.
+
+Clip audio stays inside the MP4. The publishing gate accepts that only after probing the rendered file and recording the audio evidence, so a silent render still fails. Approval requires explicit confirmation of the licences and the schedule, and publishes through the same queue and privacy rules as every other video.
 
 ## Evidence desk
 

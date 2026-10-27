@@ -26,6 +26,10 @@ data/*.db-journal
 *.db-shm
 *.db-wal
 
+# Generated media, cached stock footage, music and rendered episodes
+/data/
+*.db
+
 # Logs
 logs/
 *.log

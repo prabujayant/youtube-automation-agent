@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Added Ranked Shorts Studio: a licensed-clip countdown pipeline that plans, trims, crops to 9:16, burns `#N` captions, keeps the original clip audio, and renders a real MP4 plus thumbnail and SRT (`npm run shorts:ranked`)
+- Every ranked Short clip requires a supported licence and a source note before planning, rendering, or approval; credits are written into the description
+- Ranked Shorts use AI ranking and copywriting when a text provider is configured, with a deterministic metadata fallback
+- Publishing now accepts clip audio embedded in the rendered MP4 only after probing the file for an audio stream; narration requirements are unchanged for everything else
+- Added ranked Short episode storage, rendering/approval/publish API routes, and a system test covering the licence gate, countdown order, render, approval, and schedule handoff
+- Added optional stock-footage mode (`PIXABAY_API_KEY` or `PEXELS_API_KEY`, `shorts:ranked stock`) that searches, downloads, caches, and licence-tags portrait clips before planning; cached files live under `data/footage/<provider>/`
+- Added optional background-music beds for ranked Shorts (`musicPath` / `--music`) mixed under the clip audio
+- Added a Ranked Shorts dashboard view for planning stock or folder countdowns, rendering, approving with explicit licence confirmation, publishing, and downloading MP4/SRT/thumbnail assets
+- Added daily ranked Shorts automation (07:00 cron, opt-in via `ranked_shorts_automation`): rotates 16 destinations from `ranked_shorts_topics`, collects stock clips, plans and renders two showcase episodes per day, auto-approves the licence-tagged clips, and schedules uploads 12 hours apart through the publish queue; tune with `ranked_shorts_per_day`, `ranked_shorts_gap_hours`, and `ranked_shorts_privacy`, plus an evening top-up run for failed mornings
+- Ranked Shorts stock titles now use provider clip tags (with "take N" suffixes for repeats) so countdown captions are distinct without a text provider
+- Added the destination showcase format for Ranked Shorts (`--format showcase`, the dashboard default): TravelWonders-style 8×3s travel Shorts with an AI "Discover …!" title, a burned top-center `♥ <destination>` ASS overlay, no hook card or rank captions, and the thumbnail from the opening clip
+- Added auto music beds for showcase Shorts (`music: "auto"` / `--music auto`): a free CC-BY Kevin MacLeod track (Incompetech) is rotated per day, downloaded once into `data/footage/music/`, and attributed in the description; showcase episodes without music fall back to a locally synthesized ambient pad
+- Ranked Shorts descriptions are now written like a real channel's: short intro, location, music credit, one footage-licence line, and up to five hashtags — no repeated per-clip licence boilerplate (provenance stays in the episode record; only CC-BY footage is credited clip by clip)
+
 - Refreshed provider defaults and selectors: OpenAI GPT-6.1 Sol (with GPT-6 Astra and Luna), Gemini 3.8 Flash (with Gemini 4 Argon), MiMo V2.6, GLM-5.3 Flash, Claude Fable 5.1, and the current OpenRouter catalog
 - Added DeepSeek (`DEEPSEEK_API_KEY`) and MiniMax M3 text (`MINIMAX_TEXT_API_KEY`) as text providers; the existing `MINIMAX_API_KEY` still only enables MiniMax H3 video
 - Moved Gemini Omni video to `gemini-omni-1.1-flash` and Gemini narration to `gemini-3.8-flash-tts` ahead of Google's shutdown of the preview models

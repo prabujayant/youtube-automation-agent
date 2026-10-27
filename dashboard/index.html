@@ -27,6 +27,7 @@
         <button class="nav-item" data-view="operator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg> Autonomous operator</button>
         <button class="nav-item" data-view="pipeline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17.5" cy="6" r="2"/><circle cx="14.5" cy="18" r="2"/></svg> Pipeline <b id="review-badge" class="badge hidden">0</b></button>
         <button class="nav-item" data-view="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h3v3h-3z"/></svg> Calendar & ideas</button>
+        <button class="nav-item" data-view="shorts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 9l5 3-5 3zM8 5l1.5 3M14 5l1.5 3M8 19l1.5-3M14 19l1.5-3"/></svg> Ranked Shorts</button>
         <button class="nav-item" data-view="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 20V11M11 20V4.5M15.5 20v-7M20 20V8.5"/></svg> Analytics</button>
         <button class="nav-item" data-view="engagement"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-9.1 8.4 9 9 0 01-3.8-.9L3 20l1-4.9A8.4 8.4 0 1121 11.5z"/><path d="M8 10h8M8 13.5h5"/></svg> Engagement</button>
         <button class="nav-item" data-view="readiness"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l7.5 3v6c0 4.8-3.2 8.2-7.5 9.4-4.3-1.2-7.5-4.6-7.5-9.4v-6z"/><path d="M8.8 12.2l2.3 2.3 4.4-4.6"/></svg> Production readiness</button>
@@ -133,6 +134,46 @@
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">SCHEDULED</p><h2>Upcoming releases</h2></div></div><div id="calendar-list" class="calendar-list"></div></article>
           <article class="panel"><div class="panel-heading"><div><p class="eyebrow">BACKLOG</p><h2>Content ideas</h2></div></div><div id="idea-list" class="idea-list"></div></article>
         </div>
+      </section>
+
+      <section id="shorts-view" class="view">
+        <div class="section-intro"><div><h2>Ranked Shorts</h2><p>9:16 countdown Shorts assembled only from licensed clips. Plan, render, then approve before anything is scheduled.</p></div><span id="shorts-stock-status" class="status">Checking stock access...</span></div>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">NEW EPISODE</p><h2>Build a countdown</h2></div></div>
+          <form id="ranked-shorts-form" class="form-grid two">
+            <label><span>Topic</span><input name="topic" required maxlength="120" placeholder="Dogs failing at fetch"></label>
+            <label><span>Clip source</span><select name="source" id="ranked-source"><option value="stock">Pixabay / Pexels stock</option><option value="folder">Local folder</option></select></label>
+            <label><span>Format</span><select name="format" id="ranked-format"><option value="showcase">Destination showcase (travel)</option><option value="ranked">Ranked countdown</option></select></label>
+            <label data-ranked-stock><span>Search queries (optional)</span><input name="queries" placeholder="dog fail, dog jump, dog pool"></label>
+            <label data-ranked-folder hidden><span>Clips folder</span><input name="clipsDir" placeholder="C:\path\to\clips"></label>
+            <label data-ranked-folder hidden><span>License</span><select name="license">
+              <option value="owned">Owned / self-recorded</option>
+              <option value="licensed">Licensed</option>
+              <option value="cc-by">CC-BY</option>
+              <option value="cc-by-sa">CC-BY-SA</option>
+              <option value="public-domain">Public domain</option>
+              <option value="permission">Written permission</option>
+            </select></label>
+            <label data-ranked-folder hidden><span>License source</span><input name="licenseSource" placeholder="Self-recorded or licence URL"></label>
+            <label><span>Clips in countdown</span><input name="count" type="number" min="2" max="10" value="7"></label>
+            <label><span>Max length (seconds)</span><input name="maxSeconds" type="number" min="10" max="180" value="60"></label>
+            <label><span>Framing</span><select name="fit"><option value="crop">Full-bleed crop</option><option value="blur">Blurred letterbox</option></select></label>
+            <label><span>Privacy after approval</span><select name="privacyStatus">
+              <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
+            </select></label>
+            <label class="span-two"><span>Hook override (optional)</span><input name="hook" maxlength="90" placeholder="Wait for #1..."></label>
+            <label><span>Music</span><select name="musicMode" id="ranked-music-mode">
+              <option value="auto">Auto free track (CC-BY)</option>
+              <option value="file">My own file</option>
+              <option value="none">None</option>
+            </select></label>
+            <label data-ranked-musicfile><span>Music file</span><input name="musicPath" placeholder="C:\path\to\music.mp3"></label>
+            <label class="span-two"><span>Showcase overlay (optional)</span><input name="overlay" maxlength="24" placeholder="♥ Venice"></label>
+            <div class="form-actions span-two"><button class="button" type="submit" id="ranked-plan-button">Plan countdown</button><button class="button secondary" type="button" id="ranked-refresh">Refresh</button></div>
+          </form>
+          <p class="callout">Stock mode downloads portrait clips from a free stock API (Pixabay or Pexels key in .env). Nothing is uploaded until you approve and schedule an episode.</p>
+        </article>
+        <div id="ranked-shorts-list" class="pipeline-list"></div>
       </section>
 
       <section id="analytics-view" class="view">
@@ -274,10 +315,12 @@
             <label class="full-row"><span>Default call to action</span><input name="callToAction"></label>
             <label class="full-row"><span>Visual direction</span><input name="visualStyle"></label>
             <label class="full-row"><span>Blocked topics or terms</span><input name="bannedTopics" placeholder="term one, term two"><small>Quality review blocks content containing these terms.</small></label>
+            <label class="full-row"><span>Ranked Shorts topic rotation</span><input name="rankedShortsTopics" placeholder="Cats knocking things over, Dogs failing at fetch"><small>Comma-separated daily rotation for the 07:00 ranked Shorts automation.</small></label>
           </div>
           <div class="settings-row">
             <label class="toggle"><input id="approval-required" type="checkbox"><span></span> Require approval before scheduling</label>
             <label class="toggle"><input id="notifications-enabled" type="checkbox"><span></span> Save operator notifications</label>
+            <label class="toggle"><input id="ranked-shorts-automation" type="checkbox"><span></span> Render one ranked Short per day (approval still required)</label>
           </div>
           <div class="form-grid video-provider-settings">
             <label><span>Video provider</span><select name="videoProvider"><option value="slideshow">Local slideshow · no provider cost</option><option value="auto">Automatic capability routing</option><option value="seedance">ByteDance Seedance 2.5</option><option value="minimax_h3">MiniMax H3</option><option value="google_omni">Google Gemini Omni Flash</option><option value="kling">Kuaishou Kling 3.0 Omni</option><option value="wan">Alibaba Wan 2.7</option></select><small id="video-provider-status">Provider credentials are checked at runtime.</small></label>

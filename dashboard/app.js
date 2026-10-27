@@ -810,6 +810,10 @@ function populateSettings(profile = {}, settings = {}, providers = []) {
   }
   $('#approval-required').checked = settings.approval_required !== 'false';
   $('#notifications-enabled').checked = settings.notification_enabled !== 'false';
+  $('#ranked-shorts-automation').checked = settings.ranked_shorts_automation === 'true';
+  if (form.elements.rankedShortsTopics && document.activeElement !== form.elements.rankedShortsTopics) {
+    form.elements.rankedShortsTopics.value = settings.ranked_shorts_topics || '';
+  }
   const videoMapping = {
     videoProvider: settings.video_provider || 'slideshow',
     videoGenerationMode: settings.video_generation_mode || 'hybrid',
@@ -835,6 +839,7 @@ function switchView(view) {
     operator: ['AUTONOMOUS OPERATOR', 'Give YouTube Automation Agent the strategy.'],
     pipeline: ['CONTENT OPERATIONS', 'From idea to published.'],
     calendar: ['EDITORIAL PLANNING', 'Plan before you generate.'],
+    shorts: ['RANKED SHORTS', 'Count down what people actually watch.'],
     analytics: ['PERFORMANCE', 'Turn results into the next move.'],
     engagement: ['AUDIENCE ENGAGEMENT', 'Talk with the people watching.'],
     readiness: ['PRODUCTION READINESS', 'Verify before autonomy runs.'],
@@ -845,6 +850,7 @@ function switchView(view) {
   location.hash = view;
   // Loaded on demand rather than in the 8-second dashboard poll to spare API quota.
   if (view === 'analytics') loadChannelSnapshot();
+  if (view === 'shorts') refreshRankedShorts();
 }
 
 function selectOptions(options, selected) {
@@ -1227,6 +1233,118 @@ async function persistProvenance(productionId, successMessage = null) {
     $('#loading').classList.remove('active');
   }
 }
+
+function renderRankedShorts(episodes) {
+  const list = $('#ranked-shorts-list');
+  if (!list) return;
+  if (!episodes.length) {
+    list.innerHTML = empty('No ranked Shorts yet. Build your first countdown above.');
+    return;
+  }
+  list.innerHTML = episodes.map(episode => {
+    const id = escapeHTML(episode.id);
+    const clips = (episode.clipPlan || []).slice()
+      .sort((left, right) => (right.rank || 0) - (left.rank || 0));
+    const hasVideo = Boolean(episode.assets?.video?.path);
+    const actions = [];
+    if (episode.status === 'planned') {
+      actions.push(`<button class="button secondary small" data-ranked-render="${id}">Render</button>`);
+    }
+    if (episode.status === 'rendered') {
+      actions.push(`<button class="button small" data-ranked-approve="${id}">Approve &amp; schedule</button>`);
+    }
+    if (episode.status === 'scheduled') {
+      actions.push(`<button class="button small" data-ranked-publish="${id}">Publish now</button>`);
+    }
+    if (hasVideo) {
+      actions.push(`<a class="text-button" href="/api/ranked-shorts/${id}/asset/video" download>Download MP4</a>`);
+      actions.push(`<a class="text-button" href="/api/ranked-shorts/${id}/asset/captions" download>Captions</a>`);
+    }
+    const clipLine = clips.length
+      ? `<ul class="ranked-clips">${clips.map(clip =>
+        `<li><strong>#${escapeHTML(clip.rank)}</strong> ${escapeHTML(clip.caption || clip.title || 'Clip')} <small>${escapeHTML(clip.license || '')}</small></li>`
+      ).join('')}</ul>`
+      : '';
+    const thumb = hasVideo
+      ? `<img class="ranked-thumb" src="/api/ranked-shorts/${id}/asset/thumbnail" alt="" loading="lazy">`
+      : '';
+    return `<article class="pipeline-item ranked-episode">
+      <div class="ranked-media">${thumb}<div class="ranked-title"><strong>${escapeHTML(episode.title || episode.topic)}</strong><div class="meta-line">${statusChip(episode.status)} ${escapeHTML(['pexels', 'pixabay'].includes(episode.assets?.source) ? `${label(episode.assets.source)} stock` : 'Local clips')}${episode.duration ? ` &middot; ${Number(episode.duration).toFixed(1)}s` : ''}</div></div></div>
+      <div class="ranked-body">
+        <div class="meta-line">${escapeHTML(episode.hook || '')}</div>
+        ${episode.error ? `<p class="error-text">${escapeHTML(episode.error)}</p>` : ''}
+        ${episode.publishTime ? `<div class="meta-line">Scheduled ${escapeHTML(formatDate(episode.publishTime))} &middot; ${escapeHTML(episode.privacyStatus)}</div>` : ''}
+        ${episode.youtubeUrl ? `<a class="source-link" href="${escapeHTML(episode.youtubeUrl)}" target="_blank" rel="noopener">Open on YouTube</a>` : ''}
+        ${clipLine}
+      </div>
+      <div class="ranked-actions">${actions.join('')}</div>
+    </article>`;
+  }).join('');
+}
+
+async function refreshRankedShorts() {
+  try {
+    const [payload, status] = await Promise.all([
+      api('/api/ranked-shorts'),
+      api('/api/ranked-shorts/status').catch(() => null)
+    ]);
+    renderRankedShorts(payload.episodes || []);
+    const badge = $('#shorts-stock-status');
+    if (badge && status?.stockFootage) {
+      const active = (status.stockFootage.providers || [])
+        .filter(provider => provider.available)
+        .map(provider => provider.id);
+      badge.textContent = active.length ? `Stock: ${active.join(' + ')}` : 'No stock API key';
+      badge.className = `status ${active.length ? 'passed' : 'failed'}`;
+    }
+  } catch (error) {
+    const list = $('#ranked-shorts-list');
+    if (list) list.innerHTML = empty(error.message);
+  }
+}
+
+function syncRankedMusicMode() {
+  const mode = $('#ranked-music-mode')?.value || 'auto';
+  $$('[data-ranked-musicfile]').forEach(node => { node.hidden = mode !== 'file'; });
+}
+
+function syncRankedSource() {
+  const stock = $('#ranked-source')?.value === 'stock';
+  $$('[data-ranked-stock]').forEach(node => { node.hidden = !stock; });
+  $$('[data-ranked-folder]').forEach(node => { node.hidden = stock; });
+  const folder = $('#ranked-shorts-form [name="clipsDir"]');
+  if (folder) folder.required = !stock;
+}
+
+document.addEventListener('click', async event => {
+  const render = event.target.closest('[data-ranked-render]');
+  if (render) {
+    render.disabled = true;
+    render.textContent = 'Rendering...';
+    try {
+      await mutate(`/api/ranked-shorts/${encodeURIComponent(render.dataset.rankedRender)}/render`, 'POST', {}, 'Render completed.');
+      await refreshRankedShorts();
+    } catch (_error) { /* toast already shown */ }
+    return;
+  }
+  const approve = event.target.closest('[data-ranked-approve]');
+  if (approve) {
+    if (!confirm('Confirm the clip licences and schedule this Short for 24 hours from now?')) return;
+    try {
+      await mutate(`/api/ranked-shorts/${encodeURIComponent(approve.dataset.rankedApprove)}/approve`, 'POST', { confirmed: true }, 'Short scheduled.');
+      await refreshRankedShorts();
+    } catch (_error) { /* toast already shown */ }
+    return;
+  }
+  const publish = event.target.closest('[data-ranked-publish]');
+  if (publish) {
+    if (!confirm('Upload this Short to YouTube now?')) return;
+    try {
+      await mutate(`/api/ranked-shorts/${encodeURIComponent(publish.dataset.rankedPublish)}/publish`, 'POST', {}, 'Short uploaded.');
+      await refreshRankedShorts();
+    } catch (_error) { /* toast already shown */ }
+  }
+});
 
 async function mutate(url, method, body, successMessage) {
   $('#loading').classList.add('active');
@@ -1774,13 +1892,16 @@ $('#idea-form').addEventListener('submit', async event => {
 
 $('#profile-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
+  const form = event.currentTarget;
+  const values = Object.fromEntries(new FormData(form));
   values.bannedTopics = values.bannedTopics.split(',').map(value => value.trim()).filter(Boolean);
   try {
     await mutate('/api/profile', 'PUT', values, 'Channel setup saved.');
     await mutate('/api/settings', 'PUT', {
       approval_required: $('#approval-required').checked,
       notification_enabled: $('#notifications-enabled').checked,
+      ranked_shorts_automation: $('#ranked-shorts-automation').checked,
+      ranked_shorts_topics: form.elements.rankedShortsTopics.value,
       channel_timezone: values.timezone,
       video_provider: values.videoProvider,
       video_generation_mode: values.videoGenerationMode,
@@ -1794,7 +1915,50 @@ $('#api-key-button').addEventListener('click', () => {
   if (requestApiKey() !== null) showToast('Dashboard API key saved in this browser.');
 });
 
+$('#ranked-source').addEventListener('change', syncRankedSource);
+$('#ranked-music-mode').addEventListener('change', syncRankedMusicMode);
+$('#ranked-refresh').addEventListener('click', refreshRankedShorts);
+$('#ranked-shorts-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const values = Object.fromEntries(new FormData(form));
+  const stock = values.source === 'stock';
+  const musicMode = values.musicMode || 'auto';
+  const body = {
+    topic: values.topic.trim(),
+    format: values.format || 'showcase',
+    overlay: values.overlay.trim() || null,
+    count: Number(values.count),
+    maxSeconds: Number(values.maxSeconds),
+    fit: values.fit,
+    hook: values.hook.trim() || null,
+    music: musicMode === 'auto' ? 'auto' : undefined,
+    musicPath: musicMode === 'file' ? values.musicPath.trim() : null,
+    privacyStatus: values.privacyStatus
+  };
+  if (stock) {
+    body.queries = values.queries.split(',').map(query => query.trim()).filter(Boolean);
+  } else {
+    body.clipsDir = values.clipsDir.trim();
+    body.license = values.license;
+    body.licenseSource = values.licenseSource.trim();
+  }
+  const button = $('#ranked-plan-button');
+  button.disabled = true;
+  button.textContent = stock ? 'Downloading clips...' : 'Planning...';
+  try {
+    await mutate(stock ? '/api/ranked-shorts/stock' : '/api/ranked-shorts', 'POST', body,
+      stock ? 'Stock countdown planned.' : 'Countdown planned.');
+    await refreshRankedShorts();
+  } catch (_error) { /* toast already shown */ }
+  finally {
+    button.disabled = false;
+    button.textContent = 'Plan countdown';
+  }
+});
+
 const initialView = location.hash.slice(1);
-if (['overview', 'operator', 'pipeline', 'calendar', 'analytics', 'engagement', 'readiness', 'settings'].includes(initialView)) switchView(initialView);
+syncRankedMusicMode();
+if (['overview', 'operator', 'pipeline', 'calendar', 'shorts', 'analytics', 'engagement', 'readiness', 'settings'].includes(initialView)) switchView(initialView);
 refreshDashboard();
 setInterval(() => refreshDashboard(true), 8000);

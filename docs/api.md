@@ -155,6 +155,38 @@ curl -X POST http://localhost:3456/api/content/:contentId/approve \
 | POST | `/api/content/:productionId/shorts/:clipId/approve` | Approve and schedule a Short |
 | GET | `/api/content/:productionId/shorts/:clipId/asset/:kind` | Download a Short's `video` or `captions` |
 
+### Ranked Shorts
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/ranked-shorts` | List ranked Short episodes |
+| POST | `/api/ranked-shorts` | Plan a countdown from licensed local clips |
+| GET | `/api/ranked-shorts/status` | Pexels stock-footage availability |
+| POST | `/api/ranked-shorts/stock` | Download Pexels clips and plan a countdown |
+| GET | `/api/ranked-shorts/:episodeId` | Read one episode |
+| POST | `/api/ranked-shorts/:episodeId/render` | Render the 9:16 MP4, thumbnail, and SRT |
+| POST | `/api/ranked-shorts/:episodeId/approve` | Confirm licences and schedule |
+| POST | `/api/ranked-shorts/:episodeId/publish` | Upload a scheduled episode now |
+| GET | `/api/ranked-shorts/:episodeId/asset/:kind` | Download the `video`, `thumbnail`, or `captions` |
+
+```bash
+curl -X POST http://localhost:3456/api/ranked-shorts \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "topic": "Funniest canal moments",
+    "count": 7,
+    "clips": [
+      {"file": "C:/clips/01.mp4", "title": "Croc steals the boat", "license": "owned",
+       "source": "self-recorded", "start": 2, "duration": 7}
+    ]
+  }'
+```
+
+Every clip must include a supported `license` and a `source` note, or the request returns `RANKED_SHORTS_LICENSE_REQUIRED`. `approve` also requires `{"confirmed": true}`. Pass `musicPath` to loop a local music bed under the clips.
+
+`POST /api/ranked-shorts/stock` takes `topic`, optional `queries`, `count`, `maxSeconds`, `fit`, `format` (`ranked` countdown or `showcase` destination), `overlay`, `music` (`auto` picks the free CC-BY catalog), `musicMood`, `musicPath`, and `privacyStatus`; it needs `PIXABAY_API_KEY` or `PEXELS_API_KEY` in `.env`. Showcase defaults to 8 clips and `music: "auto"`.
+
 ### Operator, learning, and experiments
 
 | Method | Route | Purpose |

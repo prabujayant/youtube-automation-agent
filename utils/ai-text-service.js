@@ -160,6 +160,9 @@ class AITextService {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature,
+      // Reasoning models burn the token budget on hidden thoughts and return
+      // empty content; disable thinking for OpenRouter free models.
+      ...(this.providerName === 'OpenRouter' ? { reasoning: { enabled: false } } : {})
     };
 
     const tokenParams = [

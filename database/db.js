@@ -534,6 +534,27 @@ class Database {
         UNIQUE(production_id, position),
         FOREIGN KEY (production_id) REFERENCES productions(id)
       )`,
+      `CREATE TABLE IF NOT EXISTS ranked_short_episodes (
+        id TEXT PRIMARY KEY,
+        topic TEXT NOT NULL,
+        hook TEXT,
+        status TEXT NOT NULL DEFAULT 'planned',
+        title TEXT,
+        description TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        clip_plan TEXT NOT NULL DEFAULT '[]',
+        assets TEXT NOT NULL DEFAULT '{}',
+        rights_confirmed_at TEXT,
+        duration REAL,
+        publish_time TEXT,
+        privacy_status TEXT DEFAULT 'private',
+        schedule_id TEXT,
+        youtube_id TEXT,
+        youtube_url TEXT,
+        error TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )`,
       `CREATE TABLE IF NOT EXISTS channel_profiles (
         id TEXT PRIMARY KEY,
         channel_name TEXT,
@@ -684,7 +705,9 @@ class Database {
       ['video_clip_duration', '8', 'Requested duration for each generated provider clip'],
       ['video_max_generated_seconds', '60', 'Maximum paid provider seconds per production'],
       ['video_resolution', '720p', 'Requested generated clip resolution'],
-      ['video_aspect_ratio', '16:9', 'Requested generated clip aspect ratio']
+      ['video_aspect_ratio', '16:9', 'Requested generated clip aspect ratio'],
+      ['ranked_shorts_automation', 'false', 'Automatically plan and render one ranked Short per day (approval still required)'],
+      ['ranked_shorts_topics', '', 'Comma-separated ranked Shorts topic rotation; empty uses the built-in niche list']
     ];
 
     for (const [key, value, description] of defaultSettings) {
@@ -1360,6 +1383,80 @@ class Database {
       inheritedEvidence: JSON.parse(row.inherited_evidence || '{}'),
       renderedAt: row.rendered_at || null,
       approvedAt: row.approved_at || null,
+      scheduleId: row.schedule_id || null,
+      youtubeId: row.youtube_id || null,
+      youtubeUrl: row.youtube_url || null
+    };
+  }
+
+  async createRankedShortEpisode(episode = {}) {
+    const id = episode.id || this.generateId('rankedshort');
+    await this.executeQuery(
+      `INSERT INTO ranked_short_episodes (
+        id, topic, hook, status, title, description, tags, clip_plan, assets,
+        rights_confirmed_at, duration, publish_time, privacy_status, schedule_id,
+        youtube_id, youtube_url, error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, episode.topic, episode.hook || null, episode.status || 'planned',
+        episode.title || null, episode.description || null, JSON.stringify(episode.tags || []),
+        JSON.stringify(episode.clipPlan || []), JSON.stringify(episode.assets || {}),
+        episode.rightsConfirmedAt || null, episode.duration ?? null, episode.publishTime || null,
+        episode.privacyStatus || 'private', episode.scheduleId || null,
+        episode.youtubeId || null, episode.youtubeUrl || null, episode.error || null
+      ]
+    );
+    return this.getRankedShortEpisode(id);
+  }
+
+  async getRankedShortEpisode(id) {
+    return this.parseRankedShortEpisode(
+      await this.getRow('SELECT * FROM ranked_short_episodes WHERE id = ?', [id])
+    );
+  }
+
+  async listRankedShortEpisodes(limit = 25) {
+    const rows = await this.getAllRows(
+      'SELECT * FROM ranked_short_episodes ORDER BY created_at DESC LIMIT ?',
+      [Math.max(1, Math.min(200, Number(limit) || 25))]
+    );
+    return rows.map(row => this.parseRankedShortEpisode(row));
+  }
+
+  async updateRankedShortEpisode(id, changes = {}) {
+    const current = await this.getRankedShortEpisode(id);
+    if (!current) return null;
+    const next = { ...current, ...changes };
+    await this.executeQuery(
+      `UPDATE ranked_short_episodes SET
+        topic = ?, hook = ?, status = ?, title = ?, description = ?, tags = ?,
+        clip_plan = ?, assets = ?, rights_confirmed_at = ?, duration = ?,
+        publish_time = ?, privacy_status = ?, schedule_id = ?, youtube_id = ?,
+        youtube_url = ?, error = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+      [
+        next.topic, next.hook || null, next.status || 'planned', next.title || null,
+        next.description || null, JSON.stringify(next.tags || []),
+        JSON.stringify(next.clipPlan || []), JSON.stringify(next.assets || {}),
+        next.rightsConfirmedAt || null, next.duration ?? null, next.publishTime || null,
+        next.privacyStatus || 'private', next.scheduleId || null,
+        next.youtubeId || null, next.youtubeUrl || null, next.error || null, id
+      ]
+    );
+    return this.getRankedShortEpisode(id);
+  }
+
+  parseRankedShortEpisode(row) {
+    if (!row) return null;
+    return {
+      ...row,
+      tags: JSON.parse(row.tags || '[]'),
+      clipPlan: JSON.parse(row.clip_plan || '[]'),
+      assets: JSON.parse(row.assets || '{}'),
+      rightsConfirmedAt: row.rights_confirmed_at || null,
+      duration: row.duration === null || row.duration === undefined ? null : Number(row.duration),
+      publishTime: row.publish_time || null,
+      privacyStatus: row.privacy_status || 'private',
       scheduleId: row.schedule_id || null,
       youtubeId: row.youtube_id || null,
       youtubeUrl: row.youtube_url || null

@@ -35,6 +35,11 @@ class SystemTest {
       { name: 'Scene Repair Studio', test: () => this.testSceneRepairStudio() },
       { name: 'Narration Reliability and Recovery', test: () => this.testNarrationReliability() },
       { name: 'Shorts Repurposing Studio', test: () => this.testShortsRepurposingStudio() },
+      { name: 'Ranked Shorts Studio', test: () => this.testRankedShortsStudio() },
+      { name: 'Showcase Format', test: () => this.testShowcaseFormat() },
+      { name: 'Music Bed Service', test: () => this.testMusicBedService() },
+      { name: 'Stock Footage Service', test: () => this.testStockFootageService() },
+      { name: 'Daily Ranked Shorts Automation', test: () => this.testDailyRankedShortsAutomation() },
       { name: 'Research and Provenance Desk', test: () => this.testProvenanceDesk() },
       { name: 'DarkzSEO Discoverability Preflight', test: () => this.testDiscoverabilityPreflight() },
       { name: 'Open Issue Regressions', test: () => this.testOpenIssueRegressions() },
@@ -1602,6 +1607,481 @@ class SystemTest {
       await fs.rm(directory, { recursive: true, force: true });
     }
     this.logger.info('Shorts Repurposing Studio test completed successfully');
+  }
+
+  async testRankedShortsStudio() {
+    const fs = require('fs').promises;
+    const os = require('os');
+    const { runFFmpeg } = require('./utils/ffmpeg');
+    const { PublishingSchedulingAgent } = require('./agents/publishing-scheduling-agent');
+    const { RankedShortsService } = require('./utils/ranked-shorts-service');
+
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-ranked-shorts-'));
+    const db = new Database();
+    db.dbPath = path.join(directory, 'ranked-shorts.db');
+    await db.initialize();
+
+    try {
+      const clipsDir = path.join(directory, 'clips');
+      await fs.mkdir(clipsDir, { recursive: true });
+      const colors = ['#7f1d1d', '#1e3a8a', '#065f46'];
+      for (let index = 0; index < 3; index++) {
+        await runFFmpeg([
+          '-y', '-f', 'lavfi', '-i', `color=c=${colors[index]}:s=320x240:r=24:d=3`,
+          '-f', 'lavfi', '-i', 'sine=frequency=320:duration=3',
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest',
+          path.join(clipsDir, `0${index + 1}.mp4`)
+        ]);
+      }
+      await fs.writeFile(path.join(clipsDir, 'clips.json'), JSON.stringify({
+        clips: [
+          { file: '01.mp4', title: 'First moment', license: 'owned', source: 'self-recorded', score: 3 },
+          { file: '02.mp4', title: 'Second moment', license: 'licensed', source: 'licence-agreement-42', score: 9 },
+          { file: '03.mp4', title: 'Third moment', license: 'cc-by', source: 'https://creativecommons.org/licenses/by/4.0/', score: 6 }
+        ]
+      }), 'utf8');
+
+      const publishing = new PublishingSchedulingAgent(db, {});
+      const service = new RankedShortsService(db, publishing, {
+        dataRoot: path.join(directory, 'ranked'), width: 180, height: 320, logger: this.logger
+      });
+
+      let licenceBlocked = false;
+      try {
+        await service.plan({
+          topic: 'Unlicensed clips',
+          clips: [
+            { file: path.join(clipsDir, '01.mp4'), title: 'No licence', license: 'scraped', source: 'somewhere' },
+            { file: path.join(clipsDir, '02.mp4'), title: 'No licence', license: 'scraped', source: 'somewhere' }
+          ]
+        });
+      } catch (error) {
+        licenceBlocked = error.code === 'RANKED_SHORTS_LICENSE_REQUIRED';
+      }
+      if (!licenceBlocked) throw new Error('Ranked Shorts accepted clips without a supported licence');
+
+      const planned = await service.plan({ topic: 'Funniest canal moments', clipsDir, count: 2 });
+      if (planned.status !== 'planned' || planned.clipPlan.length !== 2) {
+        throw new Error('Ranked Short plan did not persist its clip countdown');
+      }
+      if (planned.clipPlan.map(clip => clip.rank).join(',') !== '2,1') {
+        throw new Error('Ranked Short plan is not ordered as a countdown ending on #1');
+      }
+
+      const rendered = await service.render(planned.id);
+      const videoPath = rendered.assets?.video?.path;
+      if (rendered.status !== 'rendered' || !videoPath || !rendered.assets?.thumbnail?.path || !rendered.assets?.captions?.path) {
+        throw new Error('Ranked Short rendering did not persist its MP4, thumbnail, and captions');
+      }
+      const stats = await fs.stat(videoPath);
+      if (stats.size <= 0 || !(rendered.duration > 0)) throw new Error('Ranked Short rendered an empty file');
+      await runFFmpeg(['-v', 'error', '-i', videoPath, '-f', 'null', '-']);
+      const captions = await fs.readFile(rendered.assets.captions.path, 'utf8');
+      if (!captions.includes('#2') || !captions.includes('#1')) {
+        throw new Error('Ranked Short captions did not include the countdown ranks');
+      }
+
+      let approvalBlocked = false;
+      try {
+        await service.approve(planned.id, {});
+      } catch (error) {
+        approvalBlocked = error.code === 'RANKED_SHORTS_APPROVAL_REQUIRED';
+      }
+      if (!approvalBlocked) throw new Error('Ranked Short scheduling skipped explicit licence confirmation');
+
+      const scheduled = await service.approve(planned.id, {
+        confirmed: true,
+        publishTime: new Date(Date.now() + 86400000).toISOString(),
+        privacyStatus: 'private'
+      });
+      const schedule = await db.getLatestScheduleEntry(planned.id);
+      if (
+        scheduled.status !== 'scheduled' || !schedule ||
+        schedule.metadata.contentType !== 'short' ||
+        schedule.metadata.sourceProductionId !== planned.id
+      ) {
+        throw new Error('Approved ranked Short did not create an independent schedule entry');
+      }
+      if (await publishing.isNarrationReady(schedule.metadata.audio)) {
+        throw new Error('Ranked Short embedded audio was mistaken for a narration track');
+      }
+      if (!await publishing.hasEmbeddedAudio(schedule.metadata.audio, schedule.metadata.video.path)) {
+        throw new Error('Publishing did not verify the clip audio embedded in the ranked Short');
+      }
+    } finally {
+      await db.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+    this.logger.info('Ranked Shorts Studio test completed successfully');
+  }
+
+  async testStockFootageService() {
+    const fs = require('fs').promises;
+    const os = require('os');
+    const { StockFootageService } = require('./utils/stock-footage-service');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-stock-footage-'));
+
+    const video = (id, duration) => ({
+      id,
+      duration,
+      url: `https://www.pexels.com/video/${id}/`,
+      user: { name: 'Fixture Creator' },
+      video_files: [
+        { file_type: 'video/mp4', width: 1080, height: 1920, link: `https://cdn.test/${id}.mp4` },
+        { file_type: 'video/mp4', width: 540, height: 960, link: `https://cdn.test/${id}-small.mp4` }
+      ]
+    });
+    const requests = [];
+    const fakeFetch = async (url, options = {}) => {
+      if (String(url).startsWith('https://api.pexels.com')) {
+        requests.push(url);
+        if (options.headers?.Authorization !== 'fixture-key') return { ok: false, status: 401 };
+        const query = new URL(url).searchParams.get('query');
+        const videos = query.includes('empty')
+          ? []
+          : query.includes('short')
+            ? [video(9, 1)]
+            : [video(1, 8), video(2, 6), video(3, 5)];
+        return { ok: true, json: async () => ({ videos }) };
+      }
+      if (String(url).startsWith('https://pixabay.com/api/videos/')) {
+        requests.push(url);
+        const params = new URL(url).searchParams;
+        if (params.get('key') !== 'fixture-pixabay-key') {
+          return { ok: true, json: async () => ({ error: 'Invalid API key' }) };
+        }
+        const query = params.get('q');
+        const videos = query.includes('empty')
+          ? []
+          : query.includes('short')
+            ? [video(19, 1)]
+            : [video(11, 8), video(12, 6)];
+        return {
+          ok: true,
+          json: async () => ({
+            hits: videos.map(item => ({
+              id: item.id,
+              duration: item.duration,
+              pageURL: item.url,
+              user: item.user.name,
+              videos: {
+                large: { url: item.video_files[0].link, width: item.video_files[0].width, height: item.video_files[0].height },
+                medium: { url: item.video_files[1].link, width: item.video_files[1].width, height: item.video_files[1].height }
+              }
+            }))
+          })
+        };
+      }
+      return { ok: true, arrayBuffer: async () => Buffer.from(`fake-${url}`) };
+    };
+
+    try {
+      const service = new StockFootageService({
+        apiKey: 'fixture-key',
+        cacheRoot: path.join(directory, 'cache'),
+        fetch: fakeFetch,
+        requestDelay: 0
+      });
+      if (!service.isAvailable()) throw new Error('Stock service did not detect its Pexels API key');
+      if (requests.length !== 0) throw new Error('Stock service called Pexels before a request was made');
+
+      const clips = await service.collectClips({
+        topic: 'dogs failing at fetch',
+        count: 3,
+        queries: ['dogs'],
+        maxSeconds: 8
+      });
+      if (clips.length !== 3) throw new Error('Stock service did not collect the requested number of clips');
+      if (clips.some(clip => clip.license !== 'licensed' || !clip.licenseSource.includes('Pexels License'))) {
+        throw new Error('Stock clips are missing the Pexels licence provenance');
+      }
+      for (const clip of clips) {
+        const stats = await fs.stat(clip.file);
+        if (stats.size <= 0) throw new Error('Stock clip download produced an empty file');
+        if (!clip.file.startsWith(path.join(directory, 'cache'))) {
+          throw new Error('Stock clip was not stored in the configured cache directory');
+        }
+      }
+      if (clips[0].sourcePage !== 'https://www.pexels.com/video/1/') {
+        throw new Error('Stock clip did not retain its Pexels source page');
+      }
+
+      const cached = await service.collectClips({
+        topic: 'dogs failing at fetch',
+        count: 3,
+        queries: ['dogs'],
+        maxSeconds: 8
+      });
+      if (!cached.every(clip => clip.cached)) throw new Error('Stock service re-downloaded cached clips');
+
+      let tooFewBlocked = false;
+      try {
+        await service.collectClips({ topic: 'nothing', count: 4, queries: ['short', 'empty'] });
+      } catch (error) {
+        tooFewBlocked = error.code === 'STOCK_NOT_ENOUGH_CLIPS';
+      }
+      if (!tooFewBlocked) throw new Error('Stock service did not reject queries with too few usable clips');
+
+      const unconfigured = new StockFootageService({ provider: null, apiKey: null, fetch: fakeFetch });
+      let keyBlocked = false;
+      try {
+        await unconfigured.collectClips({ topic: 'dogs', count: 2 });
+      } catch (error) {
+        keyBlocked = error.code === 'STOCK_KEY_REQUIRED';
+      }
+      if (!keyBlocked) throw new Error('Stock service did not require a stock API key');
+
+      const pixabay = new StockFootageService({
+        provider: 'pixabay',
+        apiKey: 'fixture-pixabay-key',
+        cacheRoot: path.join(directory, 'cache-pixabay'),
+        fetch: fakeFetch,
+        requestDelay: 0
+      });
+      const pixabayClips = await pixabay.collectClips({
+        topic: 'dogs failing at fetch',
+        count: 2,
+        queries: ['dogs'],
+        maxSeconds: 8
+      });
+      if (pixabayClips.length !== 2) throw new Error('Pixabay search did not normalize its hits');
+      if (pixabayClips.some(clip => !clip.licenseSource.includes('Pixabay Content License'))) {
+        throw new Error('Pixabay clips are missing the Pixabay Content License provenance');
+      }
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+    this.logger.info('Stock Footage Service test completed successfully');
+  }
+
+  async testDailyRankedShortsAutomation() {
+    const { DailyAutomation } = require('./schedules/daily-automation');
+    const settings = { ranked_shorts_automation: 'true', ranked_shorts_topics: 'Topic A, Topic B, Topic C' };
+    let planned = 0;
+    let rendered = 0;
+    const approvals = [];
+    const topics = [];
+    let todayEpisodes = [];
+    const fakeStock = {
+      provider: 'pixabay',
+      isAvailable: () => settings.stockAvailable !== 'false',
+      collectClips: async ({ topic }) => {
+        topics.push(topic);
+        return [1, 2, 3].map(index => ({
+          file: `clip-${index}.mp4`, title: `Clip ${index}`, license: 'licensed',
+          licenseSource: 'Pixabay Content License — https://pixabay.com/service/license-summary/',
+          score: index, start: 0, duration: 5
+        }));
+      }
+    };
+    const fakeRanked = {
+      plan: async input => { planned += 1; return { id: `ep-${planned}`, duration: 24, ...input }; },
+      render: async episode => { rendered += 1; return { ...episode, status: 'rendered' }; },
+      approve: async (id, input) => {
+        approvals.push({ id, ...input });
+        return { id, status: 'scheduled', ...input };
+      }
+    };
+    const automation = new DailyAutomation({}, {
+      getSetting: async key => settings[key],
+      listRankedShortEpisodes: async () => todayEpisodes
+    }, { rankedShorts: fakeRanked, stockFootage: fakeStock });
+
+    await automation.runDailyRankedShorts();
+    if (planned !== 2 || rendered !== 2) {
+      throw new Error('Daily ranked Shorts automation did not plan and render two episodes');
+    }
+    if (new Set(topics).size !== 2) {
+      throw new Error('Daily ranked Shorts automation reused a destination for both episodes');
+    }
+    if (!topics.every(topic => ['Topic A', 'Topic B', 'Topic C'].includes(topic))) {
+      throw new Error('Daily ranked Shorts automation did not use the configured topic rotation');
+    }
+    if (approvals.length !== 2) {
+      throw new Error('Daily ranked Shorts automation did not schedule both episodes');
+    }
+    const gap = new Date(approvals[1].publishTime).getTime() - new Date(approvals[0].publishTime).getTime();
+    if (gap !== 12 * 3600000) {
+      throw new Error(`Daily ranked Shorts uploads are not 12 hours apart (${gap / 3600000}h)`);
+    }
+    if (approvals.some(approval => approval.privacyStatus !== 'public' || approval.confirmed !== true)) {
+      throw new Error('Daily ranked Shorts automation did not confirm rights and schedule public uploads');
+    }
+
+    settings.ranked_shorts_automation = 'false';
+    await automation.runDailyRankedShorts();
+    if (planned !== 2) throw new Error('Daily ranked Shorts automation ran while disabled');
+
+    settings.ranked_shorts_automation = 'true';
+    todayEpisodes = [
+      { id: 'ep-1', topic: topics[0], status: 'scheduled', createdAt: new Date().toISOString(), publishTime: approvals[0].publishTime },
+      { id: 'ep-2', topic: topics[1], status: 'scheduled', createdAt: new Date().toISOString(), publishTime: approvals[1].publishTime }
+    ];
+    await automation.runDailyRankedShorts();
+    if (planned !== 2) {
+      throw new Error('Daily ranked Shorts automation created extra episodes for the same day');
+    }
+
+    todayEpisodes = [todayEpisodes[0]];
+    await automation.runDailyRankedShorts();
+    if (planned !== 3) throw new Error('Daily ranked Shorts automation did not top up the missing episode');
+    if (topics[2] === todayEpisodes[0].topic) {
+      throw new Error('Daily ranked Shorts top-up reused the already-scheduled destination');
+    }
+    if (approvals.length !== 3) throw new Error('Daily ranked Shorts top-up was not scheduled');
+    const topUpGap = new Date(approvals[2].publishTime).getTime() - new Date(approvals[0].publishTime).getTime();
+    if (topUpGap !== 12 * 3600000) {
+      throw new Error('Daily ranked Shorts top-up does not respect the 12-hour upload gap');
+    }
+
+    settings.stockAvailable = 'false';
+    await automation.runDailyRankedShorts();
+    if (planned !== 3) throw new Error('Daily ranked Shorts automation ran without a stock-footage key');
+    this.logger.info('Daily Ranked Shorts automation test completed successfully');
+  }
+
+  async testMusicBedService() {
+    const fs = require('fs').promises;
+    const os = require('os');
+    const { MusicBedService } = require('./utils/music-bed-service');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-music-bed-'));
+    const downloads = [];
+    const fakeFetch = async url => {
+      downloads.push(String(url));
+      return { ok: true, arrayBuffer: async () => Buffer.alloc(200000, 1) };
+    };
+    try {
+      const service = new MusicBedService({
+        cacheRoot: path.join(directory, 'cache'),
+        fetch: fakeFetch,
+        catalog: [
+          { track: 'Carefree', mood: 'uplifting' },
+          { track: 'Wallpaper', mood: 'uplifting' },
+          { track: 'Daily Beetle', mood: 'playful' }
+        ]
+      });
+      const first = await service.resolve({ mood: 'uplifting', dayIndex: 0 });
+      if (first.entry.track !== 'Carefree') throw new Error('Music pick ignored the rotation index');
+      if (!first.path.startsWith(path.join(directory, 'cache'))) throw new Error('Music bed stored outside its cache');
+      const second = await service.resolve({ mood: 'uplifting', dayIndex: 0 });
+      if (!second.cached) throw new Error('Music bed re-downloaded a cached track');
+      const rotated = await service.resolve({ mood: 'uplifting', dayIndex: 1 });
+      if (rotated.entry.track !== 'Wallpaper') throw new Error('Music rotation did not advance');
+
+      let broken = false;
+      try {
+        const failing = new MusicBedService({
+          cacheRoot: path.join(directory, 'cache2'),
+          fetch: async () => ({ ok: false, status: 404 }),
+          catalog: [{ track: 'Wallpaper', mood: 'uplifting' }]
+        });
+        await failing.resolve({});
+      } catch (error) {
+        broken = error.code === 'MUSIC_DOWNLOAD_FAILED';
+      }
+      if (!broken) throw new Error('Music service did not surface download failures');
+
+      const credit = service.credit(first.entry);
+      if (!credit.includes('Kevin MacLeod') || !credit.includes('CC-BY')) {
+        throw new Error('Music credit is missing attribution details');
+      }
+
+      const libraryDir = path.join(directory, 'library');
+      await fs.mkdir(libraryDir, { recursive: true });
+      await fs.writeFile(path.join(libraryDir, 'sunrise_drive.mp3'), Buffer.alloc(16));
+      const withLibrary = new MusicBedService({
+        cacheRoot: path.join(directory, 'cache3'),
+        libraryRoot: libraryDir,
+        fetch: fakeFetch,
+        catalog: [{ track: 'Carefree', mood: 'uplifting' }]
+      });
+      const local = await withLibrary.resolve({});
+      if (!local || local.localTrack !== 'sunrise_drive.mp3') {
+        throw new Error('Music library did not override the online catalog');
+      }
+      if (!withLibrary.creditFor(local).includes('sunrise drive')) {
+        throw new Error('Local music credit is missing the track name');
+      }
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+    this.logger.info('Music Bed Service test completed successfully');
+  }
+
+  async testShowcaseFormat() {
+    const fs = require('fs').promises;
+    const os = require('os');
+    const { runFFmpeg } = require('./utils/ffmpeg');
+    const { PublishingSchedulingAgent } = require('./agents/publishing-scheduling-agent');
+    const { RankedShortsService } = require('./utils/ranked-shorts-service');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-showcase-'));
+    const db = new Database();
+    db.dbPath = path.join(directory, 'showcase.db');
+    await db.initialize();
+    try {
+      const clipsDir = path.join(directory, 'clips');
+      await fs.mkdir(clipsDir, { recursive: true });
+      const colors = ['#0e7490', '#155e75', '#164e63'];
+      for (let index = 0; index < 3; index++) {
+        await runFFmpeg([
+          '-y', '-f', 'lavfi', '-i', `color=c=${colors[index]}:s=320x240:r=24:d=4`,
+          '-f', 'lavfi', '-i', 'sine=frequency=400:duration=4',
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest',
+          path.join(clipsDir, `0${index + 1}.mp4`)
+        ]);
+      }
+      await fs.writeFile(path.join(clipsDir, 'clips.json'), JSON.stringify({
+        clips: [
+          { file: '01.mp4', title: 'Venice canals', license: 'licensed', source: 'Pixabay Content License — https://pixabay.com/service/license-summary/', score: 9 },
+          { file: '02.mp4', title: 'Venice gondolas', license: 'licensed', source: 'Pixabay Content License — https://pixabay.com/service/license-summary/', score: 8 },
+          { file: '03.mp4', title: 'Venice piazzas', license: 'licensed', source: 'Pixabay Content License — https://pixabay.com/service/license-summary/', score: 7 }
+        ]
+      }), 'utf8');
+
+      const publishing = new PublishingSchedulingAgent(db, {});
+      const service = new RankedShortsService(db, publishing, {
+        dataRoot: path.join(directory, 'ranked'), width: 180, height: 320, logger: this.logger
+      });
+      const planned = await service.plan({
+        topic: 'Venice Italy',
+        format: 'showcase',
+        clipsDir,
+        overlay: '♥ Venice',
+        count: 3
+      });
+      if (planned.status !== 'planned' || planned.clipPlan.length !== 3) {
+        throw new Error('Showcase plan did not persist its clip plan');
+      }
+      if (!/^Discover/.test(planned.title)) throw new Error('Showcase title is not in the Discover format');
+      if (planned.clipPlan.map(clip => clip.rank).join(',') !== '1,2,3') {
+        throw new Error('Showcase order should be best-first (opposite of countdown order)');
+      }
+
+      const rendered = await service.render(planned.id);
+      const videoPath = rendered.assets?.video?.path;
+      if (rendered.status !== 'rendered' || !videoPath || !rendered.assets?.captions?.path) {
+        throw new Error('Showcase rendering did not persist its MP4 and overlay');
+      }
+      if (!rendered.assets.captions.path.endsWith('.ass')) {
+        throw new Error('Showcase should burn an ASS overlay, not an SRT');
+      }
+      const overlay = await fs.readFile(rendered.assets.captions.path, 'utf8');
+      if (!overlay.includes('Venice') || !overlay.includes('Dialogue')) {
+        throw new Error('Showcase overlay lost its destination text');
+      }
+      if (rendered.duration > 10.5 || rendered.duration < 7) {
+        throw new Error(`Showcase duration ${rendered.duration}s does not match 3 clips of 3 seconds`);
+      }
+      await runFFmpeg(['-v', 'error', '-i', videoPath, '-f', 'null', '-']);
+      const music = rendered.assets.musicPath;
+      if (!music || !path.basename(music).includes('ambient-pad')) {
+        throw new Error('Showcase did not fall back to the default ambient music bed');
+      }
+    } finally {
+      await db.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+    this.logger.info('Showcase format test completed successfully');
   }
 
   async testProvenanceDesk() {

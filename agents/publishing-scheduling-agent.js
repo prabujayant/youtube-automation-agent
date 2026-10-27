@@ -4,6 +4,7 @@ const fsSync = require('fs');
 const path = require('path');
 const { Logger } = require('../utils/logger');
 const { assertValidYouTubeMetadata } = require('../utils/youtube-metadata-validator');
+const { runFFmpeg } = require('../utils/ffmpeg');
 
 class PublishingSchedulingAgent {
   constructor(db, credentials) {
@@ -49,7 +50,8 @@ class PublishingSchedulingAgent {
         this.logger.warn(`Not scheduling ${productionData.id}: no real video file was produced (placeholder/simulated output). Fix your AI provider keys and FFmpeg, then regenerate.`);
         return null;
       }
-      if (!await this.isNarrationReady(productionData.assets?.audio)) {
+      if (!await this.isNarrationReady(productionData.assets?.audio) &&
+        !await this.hasEmbeddedAudio(productionData.assets?.audio, finalVideo.path)) {
         this.logger.warn(`Not scheduling ${productionData.id}: narration is missing. Regenerate narration or explicitly confirm an intentional silent video.`);
         return null;
       }
@@ -135,7 +137,11 @@ class PublishingSchedulingAgent {
         throw new Error(`Content not found in queue: ${contentId}`);
       }
       if (scheduleEntry.status === 'published') return scheduleEntry;
-      if (!await this.isNarrationReady(scheduleEntry.metadata?.audio || productionBundle?.assets?.audio)) {
+      if (!await this.isNarrationReady(scheduleEntry.metadata?.audio || productionBundle?.assets?.audio) &&
+        !await this.hasEmbeddedAudio(
+          scheduleEntry.metadata?.audio || productionBundle?.assets?.audio,
+          scheduleEntry.metadata?.video?.path || productionBundle?.assets?.finalVideo?.path
+        )) {
         const error = new Error('Publishing is blocked because narration is missing or the intentional-silence override is incomplete');
         error.status = 409;
         error.code = 'NARRATION_REQUIRED';
@@ -267,6 +273,16 @@ class PublishingSchedulingAgent {
       return stats.isFile() && stats.size > 0;
     } catch (_error) {
       return false;
+    }
+  }
+
+  async hasEmbeddedAudio(audio = {}, videoPath = null) {
+    if (audio?.embedded !== true || !videoPath) return false;
+    try {
+      await runFFmpeg(['-hide_banner', '-i', videoPath]);
+      return false;
+    } catch (error) {
+      return /Stream #\d+:\d+.*: Audio:/i.test(String(error.stderr || ''));
     }
   }
 

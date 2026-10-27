@@ -23,6 +23,9 @@ const { GenerationRecoveryService, GENERATION_STAGES } = require('./utils/genera
 const { ProvenanceService } = require('./utils/provenance-service');
 const { SceneRepairService } = require('./utils/scene-repair-service');
 const { ShortsRepurposingService } = require('./utils/shorts-repurposing-service');
+const { RankedShortsService } = require('./utils/ranked-shorts-service');
+const { StockFootageService } = require('./utils/stock-footage-service');
+const { MusicBedService } = require('./utils/music-bed-service');
 const { AudienceEngagementService } = require('./utils/audience-engagement-service');
 const { GrowthExperimentService } = require('./utils/growth-experiment-service');
 const { AITextService } = require('./utils/ai-text-service');
@@ -113,6 +116,16 @@ class YouTubeAutomationAgent {
         { logger: this.logger }
       );
       this.shorts = new ShortsRepurposingService(this.db, this.agents.publishing, { logger: this.logger });
+      this.stockFootage = new StockFootageService({
+        logger: this.logger,
+        credentials: this.credentials
+      });
+      this.musicBed = new MusicBedService({ logger: this.logger });
+      this.rankedShorts = new RankedShortsService(this.db, this.agents.publishing, {
+        logger: this.logger,
+        credentials: this.credentials,
+        musicBed: this.musicBed
+      });
       this.engagement = new AudienceEngagementService(
         this.db,
         this.credentials,
@@ -140,7 +153,9 @@ class YouTubeAutomationAgent {
       this.scheduler = new DailyAutomation(this.agents, this.db, {
         generateContent: input => this.queueScheduledContent(input),
         engagement: this.engagement,
-        experiments: this.experiments
+        experiments: this.experiments,
+        rankedShorts: this.rankedShorts,
+        stockFootage: this.stockFootage
       });
       await this.scheduler.initialize();
 
@@ -706,6 +721,133 @@ class YouTubeAutomationAgent {
       }
     });
 
+    this.app.get('/api/ranked-shorts', async (_req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episodes = await this.rankedShorts.list();
+        return res.json({ success: true, episodes });
+      } catch (error) {
+        return res.status(error.status || 500).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.post('/api/ranked-shorts', protect, async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episode = await this.rankedShorts.plan(req.body || {});
+        return res.status(201).json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.post('/api/ranked-shorts/stock', protect, async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const stock = new StockFootageService({
+          logger: this.logger,
+          credentials: this.credentials
+        });
+        if (!stock.isAvailable()) {
+          return res.status(400).json({
+            success: false,
+            error: 'No stock provider configured. Get a free key at https://pixabay.com/api/docs/ (PIXABAY_API_KEY) or https://www.pexels.com/api/ (PEXELS_API_KEY) and add it to .env',
+            code: 'STOCK_KEY_REQUIRED'
+          });
+        }
+        const body = req.body || {};
+        const clips = await stock.collectClips({
+          topic: body.topic,
+          count: body.format === 'showcase' && !body.count ? 8 : body.count,
+          queries: Array.isArray(body.queries) ? body.queries : undefined,
+          maxSeconds: body.format === 'showcase' ? 5 : body.clipMaxSeconds
+        });
+        const episode = await this.rankedShorts.plan({
+          topic: body.topic,
+          format: body.format,
+          overlay: body.overlay,
+          hook: body.hook,
+          count: clips.length,
+          clips,
+          source: stock.provider,
+          queries: Array.isArray(body.queries) ? body.queries : [],
+          maxSeconds: body.maxSeconds,
+          fit: body.fit,
+          music: body.music,
+          musicMood: body.musicMood,
+          musicPath: body.musicPath,
+          privacyStatus: body.privacyStatus
+        });
+        return res.status(201).json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.get('/api/ranked-shorts/status', (_req, res) => {
+      const stock = this.stockFootage;
+      const providers = StockFootageService.status();
+      return res.json({
+        success: true,
+        stockFootage: {
+          provider: providers.provider,
+          available: Boolean(providers.available || (stock && stock.isAvailable())),
+          providers: providers.providers
+        }
+      });
+    });
+
+    this.app.get('/api/ranked-shorts/:episodeId', async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episode = await this.rankedShorts.get(req.params.episodeId);
+        if (!episode) return res.status(404).json({ error: 'Ranked Short episode not found' });
+        return res.json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.post('/api/ranked-shorts/:episodeId/render', protect, async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episode = await this.rankedShorts.render(req.params.episodeId);
+        return res.status(202).json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.post('/api/ranked-shorts/:episodeId/approve', protect, async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episode = await this.rankedShorts.approve(req.params.episodeId, req.body || {});
+        return res.json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.post('/api/ranked-shorts/:episodeId/publish', protect, async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const episode = await this.rankedShorts.publishNow(req.params.episodeId);
+        return res.json({ success: true, episode });
+      } catch (error) {
+        return res.status(error.status || 400).json({ success: false, error: error.message, code: error.code });
+      }
+    });
+
+    this.app.get('/api/ranked-shorts/:episodeId/asset/:kind', async (req, res) => {
+      try {
+        if (!this.rankedShorts) return res.status(503).json({ error: 'Ranked Shorts requires completed setup' });
+        const filePath = await this.rankedShorts.assetPath(req.params.episodeId, req.params.kind);
+        return res.sendFile(filePath);
+      } catch (error) {
+        return res.status(error.status || 404).json({ error: error.message || 'Ranked Short asset not found' });
+      }
+    });
+
     this.app.post('/api/content/:productionId/scenes/:sceneId/narration', protect, async (req, res) => {
       try {
         if (!this.scenes) return res.status(503).json({ error: 'Narration recovery requires completed setup' });
@@ -1245,9 +1387,15 @@ class YouTubeAutomationAgent {
     });
 
     this.app.put('/api/settings', protect, async (req, res) => {
-      const allowed = ['approval_required', 'notification_enabled', 'channel_timezone', 'max_daily_posts', 'content_buffer_days'];
+      const allowed = ['approval_required', 'notification_enabled', 'channel_timezone', 'max_daily_posts', 'content_buffer_days', 'ranked_shorts_topics'];
       for (const key of allowed) {
         if (req.body?.[key] !== undefined) await this.db.setSetting(key, String(req.body[key]));
+      }
+      if (req.body?.ranked_shorts_automation !== undefined) {
+        await this.db.setSetting(
+          'ranked_shorts_automation',
+          req.body.ranked_shorts_automation === true || req.body.ranked_shorts_automation === 'true' ? 'true' : 'false'
+        );
       }
       const provider = req.body?.video_provider;
       if (provider !== undefined) {

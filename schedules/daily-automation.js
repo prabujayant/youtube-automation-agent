@@ -13,6 +13,8 @@ class DailyAutomation {
     this.generateContent = options.generateContent || null;
     this.engagement = options.engagement || null;
     this.experiments = options.experiments || null;
+    this.rankedShorts = options.rankedShorts || null;
+    this.stockFootage = options.stockFootage || null;
   }
 
   async initialize() {
@@ -87,6 +89,26 @@ class DailyAutomation {
       cron.schedule('0 */4 * * *', async () => {
         if (this.isEnabled) {
           await this.collectAudienceEngagement();
+        }
+      }, { scheduled: false })
+    );
+
+    // Daily ranked Shorts: generate a morning batch of two destination
+    // showcases; the publish queue uploads them 12 hours apart.
+    this.scheduledTasks.set('ranked-shorts-daily',
+      cron.schedule('0 7 * * *', async () => {
+        if (this.isEnabled) {
+          await this.runDailyRankedShorts();
+        }
+      }, { scheduled: false })
+    );
+
+    // Evening top-up: creates any missing Short if the morning run failed
+    // part-way (the per-day guard keeps this a no-op on healthy days).
+    this.scheduledTasks.set('ranked-shorts-evening',
+      cron.schedule('0 19 * * *', async () => {
+        if (this.isEnabled) {
+          await this.runDailyRankedShorts();
         }
       }, { scheduled: false })
     );
@@ -672,6 +694,134 @@ class DailyAutomation {
       lastHealthCheck: this.lastHealthCheck,
       uptime: process.uptime()
     };
+  }
+
+  async runDailyRankedShorts() {
+    try {
+      if (await this.db.getSetting('ranked_shorts_automation') !== 'true') {
+        this.logger.info('Skipping ranked Shorts automation - not enabled');
+        return;
+      }
+      if (!this.rankedShorts || !this.stockFootage) {
+        this.logger.warn('Ranked Shorts services are unavailable');
+        return;
+      }
+      if (!this.stockFootage.isAvailable()) {
+        this.logger.warn('Skipping ranked Shorts automation - no stock-footage API key configured');
+        return;
+      }
+
+      const perDay = Math.min(4, Math.max(1, Number(await this.db.getSetting('ranked_shorts_per_day')) || 2));
+      const gapHours = Math.min(24, Math.max(1, Number(await this.db.getSetting('ranked_shorts_gap_hours')) || 12));
+      const configuredPrivacy = (await this.db.getSetting('ranked_shorts_privacy')) || 'public';
+      const privacy = ['private', 'unlisted', 'public'].includes(configuredPrivacy)
+        ? configuredPrivacy
+        : 'public';
+
+      const today = await this.todaysRankedShorts();
+      if (today.length >= perDay) {
+        this.logger.info(`Skipping ranked Shorts automation - ${today.length} episode(s) already scheduled today`);
+        return;
+      }
+
+      const remaining = perDay - today.length;
+      const usedTopics = new Set(today.map(episode => episode.topic));
+      const topics = await this.pickRankedShortsTopics(remaining, usedTopics, perDay);
+      if (!topics.length) {
+        this.logger.warn('Skipping ranked Shorts automation - no unused destinations left in the rotation');
+        return;
+      }
+
+      // Uploads roll forward from the last scheduled publish time so a
+      // top-up run keeps the configured gap instead of stacking uploads.
+      let nextPublish = Date.now() + 2 * 60 * 1000;
+      for (const episode of today) {
+        // Published episodes use their real upload time; scheduled ones use
+        // their planned publish time.
+        const previous = new Date(
+          episode.publishedAt || episode.publishTime || episode.createdAt || 0
+        ).getTime();
+        if (Number.isFinite(previous) && previous + gapHours * 3600000 > nextPublish) {
+          nextPublish = previous + gapHours * 3600000;
+        }
+      }
+
+      for (let slot = 0; slot < topics.length; slot++) {
+        const topic = topics[slot];
+        const publishTime = new Date(nextPublish + slot * gapHours * 3600000);
+        this.logger.info(`Starting ranked Short ${slot + 1}/${topics.length} for topic: ${topic}`);
+
+        const clips = await this.stockFootage.collectClips({ topic, count: 8, maxSeconds: 5 });
+        const episode = await this.rankedShorts.plan({
+          topic,
+          clips,
+          count: clips.length,
+          format: 'showcase',
+          source: this.stockFootage.provider,
+          music: 'auto',
+          musicMood: slot % 2 ? 'tropical' : 'uplifting',
+          privacyStatus: privacy
+        });
+        const rendered = await this.rankedShorts.render(episode.id);
+        // The automation only selects licence-tagged stock clips and CC-BY
+        // music, so it can confirm the rights gate itself before scheduling.
+        const scheduled = await this.rankedShorts.approve(rendered.id, {
+          confirmed: true,
+          publishTime: publishTime.toISOString(),
+          privacyStatus: privacy
+        });
+        this.logger.success(
+          `Ranked Short ${scheduled.id} (${topic}) will upload at ${publishTime.toISOString()} (${privacy})`
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Daily ranked Shorts automation failed: ${error.message}`);
+    }
+  }
+
+  async todaysRankedShorts() {
+    if (!this.db.listRankedShortEpisodes) return [];
+    const episodes = await this.db.listRankedShortEpisodes(50) || [];
+    const today = new Date().toDateString();
+    const usable = new Set(['rendered', 'scheduled', 'published']);
+    return episodes.filter(episode => {
+      if (!episode.createdAt || !usable.has(episode.status)) return false;
+      return new Date(episode.createdAt).toDateString() === today;
+    });
+  }
+
+  async pickRankedShortsTopics(count, exclude = new Set(), perDay = 2) {
+    const configured = ((await this.db.getSetting('ranked_shorts_topics')) || '')
+      .split(',')
+      .map(topic => topic.trim())
+      .filter(Boolean);
+    const fallback = [
+      'Venice Italy',
+      'Santorini Greece',
+      'Bali Indonesia',
+      'Kyoto Japan',
+      'Paris France',
+      'Swiss Alps Switzerland',
+      'Maldives',
+      'Dubai UAE',
+      'New York City',
+      'Amalfi Coast Italy',
+      'Lisbon Portugal',
+      'Reykjavik Iceland',
+      'Marrakech Morocco',
+      'Prague Czech Republic',
+      'Cappadocia Turkey',
+      'Queenstown New Zealand'
+    ];
+    const pool = configured.length ? configured : fallback;
+    const dayIndex = Math.floor(Date.now() / 86400000);
+    const start = (dayIndex * perDay) % pool.length;
+    const topics = [];
+    for (let index = 0; index < pool.length && topics.length < count; index++) {
+      const topic = pool[(start + index) % pool.length];
+      if (!exclude.has(topic) && !topics.includes(topic)) topics.push(topic);
+    }
+    return topics;
   }
 }
 
