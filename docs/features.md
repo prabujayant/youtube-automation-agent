@@ -128,9 +128,22 @@ Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, 
 - Each run picks the destination from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating music bed, approves the licence-tagged clips, and uploads immediately. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
 - Trigger a manual run from **Actions → Travel Short → Run workflow**. `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
 - Scheduled workflows use UTC and may start a few minutes late. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
-- Google OAuth refresh tokens issued while the consent screen is in **Testing** expire after 7 days. Publish the OAuth app to production, or re-authorize locally and update the `YOUTUBE_TOKENS_JSON` secret, before that deadline.
+- Google OAuth refresh tokens issued while the consent screen is in **Testing** expire after 7 days. To fix it permanently, open **Google Auth Platform → Audience** for the project that owns this OAuth client, click **Publish app** (staying unverified is fine for personal use), then mint a production token with `npm run youtube:reauth` and update the `YOUTUBE_TOKENS_JSON` secret. Existing testing tokens keep their 7-day expiry, so re-authorizing once after publishing is required.
 
 GitHub Actions replaces the local 07:00/19:00 scheduler for the daily Shorts; keep `ranked_shorts_automation` set to `false` on the local server so the two schedulers do not upload duplicates.
+
+### Re-authorizing YouTube
+
+Mint a fresh refresh token at any time (for example after publishing the OAuth app or if uploads fail with `invalid_grant`):
+
+```bash
+npm run youtube:reauth
+# open the printed URL, approve access, then run the command with the code:
+npm run youtube:reauth -- --code "<code-or-full-redirect-url>"
+Get-Content config\tokens.json -Raw | gh secret set YOUTUBE_TOKENS_JSON -R prabujayant/youtube-automation-agent
+```
+
+The helper reports `no 7-day expiry (production token)` when the OAuth app is in production. While the app is still in **Testing**, the new token also expires after seven days; publish the app first (Google Auth Platform → Audience → **Publish app**) and re-authorize once more.
 
 Plan, render, and schedule from the CLI, the API, or the **Ranked Shorts** dashboard view:
 
