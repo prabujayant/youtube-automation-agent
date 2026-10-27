@@ -1,0 +1,74 @@
+name: Travel Short
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 07:00 IST - morning Short
+    - cron: '30 13 * * *'  # 19:00 IST - evening Short, 12h later
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Destination override (optional)
+        required: false
+      slot:
+        description: '0 = morning (uplifting music), 1 = evening (tropical music)'
+        required: false
+        default: '0'
+      dry_run:
+        description: Render the Short but skip the YouTube upload
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: travel-short
+  cancel-in-progress: false
+
+jobs:
+  short:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore credentials and API keys
+        env:
+          YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
+          YOUTUBE_TOKENS_JSON: ${{ secrets.YOUTUBE_TOKENS_JSON }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          mkdir -p config data
+          printf '%s' "$YOUTUBE_CREDENTIALS_JSON" > config/credentials.json
+          printf '%s' "$YOUTUBE_TOKENS_JSON" > config/tokens.json
+          {
+            echo "NODE_ENV=production"
+            echo "PIXABAY_API_KEY=$PIXABAY_API_KEY"
+            echo "DEFAULT_PRIVACY_STATUS=public"
+          } > .env
+
+      - name: Build and upload the Short
+        env:
+          SHORTS_SLOT: ${{ github.event.schedule == '30 13 * * *' && '1' || inputs.slot || '0' }}
+          SHORTS_TOPIC: ${{ inputs.topic }}
+          SHORTS_DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/ci-daily-short.js
+
+      - name: Keep the rendered Short
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-${{ github.run_id }}
+          path: |
+            data/ranked-shorts/**/final.mp4
+            data/ranked-shorts/**/thumbnail.jpg
+          if-no-files-found: ignore
+          retention-days: 14

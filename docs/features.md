@@ -119,6 +119,18 @@ Showcase defaults: 8 clips of 3 seconds (24 seconds total), AI-written overlay/t
 
 Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, or `PUT /api/settings` with `{"ranked_shorts_automation": true}`) and the agent runs a morning batch at 07:00: it picks two different destinations from `ranked_shorts_topics` (or the built-in 16-place list), collects eight licensed stock clips per episode, plans and renders each showcase with a rotating free music bed, and schedules the uploads 12 hours apart. Episodes are auto-approved from the licence-tagged stock clips and upload through the publish queue (checked every 15 minutes) with `ranked_shorts_privacy` (default `public`). Tune the cadence with `ranked_shorts_per_day`, `ranked_shorts_gap_hours`, and `ranked_shorts_privacy`. An evening top-up run at 19:00 creates a missing episode if the morning batch failed part-way, and the manual approval flow stays available for episodes you create yourself in the dashboard or CLI.
 
+### Running the daily Shorts in GitHub Actions
+
+`.github/workflows/shorts.yml` runs the same showcase pipeline in the cloud, twice a day at 01:30 and 13:30 UTC (07:00 and 19:00 IST), so the Shorts are generated and uploaded without a local server running:
+
+- Add `YOUTUBE_CREDENTIALS_JSON`, `YOUTUBE_TOKENS_JSON`, and `PIXABAY_API_KEY` as repository secrets (**Settings → Secrets and variables → Actions**). The workflow restores them into `config/credentials.json`, `config/tokens.json`, and `.env` on the runner; nothing secret is committed.
+- Each run picks the destination from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating music bed, approves the licence-tagged clips, and uploads immediately. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
+- Trigger a manual run from **Actions → Travel Short → Run workflow**. `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
+- Scheduled workflows use UTC and may start a few minutes late. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
+- Google OAuth refresh tokens issued while the consent screen is in **Testing** expire after 7 days. Publish the OAuth app to production, or re-authorize locally and update the `YOUTUBE_TOKENS_JSON` secret, before that deadline.
+
+GitHub Actions replaces the local 07:00/19:00 scheduler for the daily Shorts; keep `ranked_shorts_automation` set to `false` on the local server so the two schedulers do not upload duplicates.
+
 Plan, render, and schedule from the CLI, the API, or the **Ranked Shorts** dashboard view:
 
 ```bash
@@ -197,6 +209,7 @@ The scheduler starts with `npm start` and uses the server's local time.
 
 | When | Job |
 | --- | --- |
+| Daily at 01:30 and 13:30 UTC | GitHub Actions renders and uploads one destination Short per run (`.github/workflows/shorts.yml`), independent of the local server |
 | Daily at 06:00 | Generate content. With an active channel strategy, this follows its cadence and launches an autonomous research-and-production run when the content buffer needs work; otherwise the original topic-selection flow runs. |
 | Every 15 minutes | Process the publishing queue |
 | Daily at 09:00 | Collect analytics and backfill each real publication's 24-hour and 7-day evidence windows |
