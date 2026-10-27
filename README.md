@@ -4,7 +4,9 @@
 
 It researches topics, writes scripts, generates narration and visuals, assembles real MP4s, writes titles, descriptions and tags, schedules approved videos, and learns from analytics and from what your audience says. It runs on your own machine with your own API keys.
 
-[![CI](https://github.com/darkzOGx/youtube-automation-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/darkzOGx/youtube-automation-agent/actions/workflows/ci.yml)
+**This fork** runs the Latent Space Clips travel-destination pipeline: two licensed-footage showcase Shorts per day, rendered and uploaded by GitHub Actions. See [Running the daily Shorts in GitHub Actions](docs/features.md#running-the-daily-shorts-in-github-actions).
+
+[![Travel Short](https://github.com/prabujayant/youtube-automation-agent/actions/workflows/shorts.yml/badge.svg)](https://github.com/prabujayant/youtube-automation-agent/actions/workflows/shorts.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js 18.17+](https://img.shields.io/badge/node-18.17%2B-43853d.svg)](package.json)
 
@@ -29,7 +31,7 @@ You need:
 - An API key for at least one [text provider](#text). Gemini has free tiers for text and narration.
 
 ```bash
-git clone https://github.com/darkzOGx/youtube-automation-agent.git
+git clone https://github.com/prabujayant/youtube-automation-agent.git
 cd youtube-automation-agent
 npm install
 npx playwright install chromium   # renders slideshow videos; on Linux add --with-deps
