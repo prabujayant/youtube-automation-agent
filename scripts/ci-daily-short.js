@@ -44,6 +44,12 @@ function pickDestination(slot) {
   try {
     const credentials = new CredentialManager();
     await credentials.initialize();
+    const oauth = credentials.getYouTubeAuth();
+    const refreshed = await oauth.refreshAccessToken();
+    if (!refreshed.credentials?.access_token) {
+      throw new Error('YouTube token refresh returned no access token');
+    }
+    console.log(`YouTube token verified; access token valid until ${new Date(refreshed.credentials.expiry_date).toISOString()}`);
     const publishing = new PublishingSchedulingAgent(db, credentials);
     await publishing.initialize();
     const logger = publishing.logger;

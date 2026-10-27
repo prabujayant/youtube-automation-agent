@@ -20,6 +20,7 @@
     "agent:analytics": "node agents/analytics-optimization-agent.js",
     "credentials:setup": "node utils/credential-manager.js setup",
     "youtube:reauth": "node scripts/youtube-reauth.js",
+    "youtube:reauth:listen": "node scripts/youtube-reauth-listen.js",
     "lint": "eslint ."
   },
   "dependencies": {
