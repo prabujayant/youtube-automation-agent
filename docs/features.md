@@ -124,6 +124,7 @@ Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, 
 `.github/workflows/shorts.yml` runs the same showcase pipeline in the cloud, twice a day at 01:30 and 13:30 UTC (07:00 and 19:00 IST), so the Shorts are generated and uploaded without a local server running:
 
 - Add `YOUTUBE_CREDENTIALS_JSON`, `YOUTUBE_TOKENS_JSON`, and `PIXABAY_API_KEY` as repository secrets (**Settings → Secrets and variables → Actions**). The workflow restores them into `config/credentials.json`, `config/tokens.json`, and `.env` on the runner; nothing secret is committed.
+- The workflow is free on a public repository. A private repository draws on the account's monthly Actions minutes — two runs a day is roughly 350–450 minutes a month.
 - Each run picks the destination from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating music bed, approves the licence-tagged clips, and uploads immediately. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
 - Trigger a manual run from **Actions → Travel Short → Run workflow**. `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
 - Scheduled workflows use UTC and may start a few minutes late. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
