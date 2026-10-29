@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitHub Actions now uploads each Short up to 12 hours early as a private video with YouTube `publishAt`, so the 07:00/19:00 IST slots publish on time even when GitHub's scheduler runs hours late; retry crons and a channel-based duplicate guard make reruns idempotent
 - Added `npm run youtube:reauth`, a two-step OAuth helper that mints a fresh refresh token without re-entering the client credentials, reports whether the 7-day testing expiry still applies, and prints the GitHub secret update command
 - Fixed YouTube descriptions losing their line breaks and showcase videos carrying an irrelevant `#ranking` tag; the metadata validator now preserves blank-line-separated sections
 - Added a GitHub Actions workflow (`.github/workflows/shorts.yml`) that renders and uploads the twice-daily destination Shorts on a 01:30/13:30 UTC cron, with a manual dispatch dry-run and rendered MP4 artifacts

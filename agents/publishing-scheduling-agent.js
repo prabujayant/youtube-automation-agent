@@ -194,7 +194,10 @@ class PublishingSchedulingAgent {
       // Remove from queue
       this.publishQueue = this.publishQueue.filter(entry => entry.productionId !== scheduleEntry.productionId);
       
-      this.logger.success(`Content published: ${scheduleEntry.youtubeUrl}`);
+      const publishesLater = new Date(scheduleEntry.publishTime).getTime() > Date.now() + 60000;
+      this.logger.success(publishesLater
+        ? `Content scheduled: ${scheduleEntry.youtubeUrl} (publishes ${scheduleEntry.publishTime})`
+        : `Content published: ${scheduleEntry.youtubeUrl}`);
       return scheduleEntry;
     } catch (error) {
       this.logger.error('Failed to publish content:', error);

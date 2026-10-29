@@ -2,8 +2,12 @@ name: Travel Short
 
 on:
   schedule:
-    - cron: '30 1 * * *'   # 07:00 IST - morning Short
-    - cron: '30 13 * * *'  # 19:00 IST - evening Short, 12h later
+    # Upload ahead of time and let YouTube publish at the exact slot. GitHub's
+    # scheduler can run hours late, so the publish time never depends on it.
+    - cron: '30 1 * * *'   # 07:00 IST - prepare the 19:00 IST Short
+    - cron: '30 4 * * *'   # retry for the 19:00 IST Short
+    - cron: '30 13 * * *'  # 19:00 IST - prepare the next 07:00 IST Short
+    - cron: '30 16 * * *'  # retry for the next 07:00 IST Short
   workflow_dispatch:
     inputs:
       topic:
@@ -13,6 +17,9 @@ on:
         description: '0 = morning (uplifting music), 1 = evening (tropical music)'
         required: false
         default: '0'
+      publish_at:
+        description: 'Optional UTC publish time, e.g. 2026-10-30T13:30:00Z (default: now)'
+        required: false
       dry_run:
         description: Render the Short but skip the YouTube upload
         type: boolean
@@ -55,9 +62,62 @@ jobs:
             echo "DEFAULT_PRIVACY_STATUS=public"
           } > .env
 
+      - name: Resolve publish target
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_SLOT: ${{ inputs.slot }}
+          INPUT_PUBLISH_AT: ${{ inputs.publish_at }}
+        run: |
+          set -euo pipefail
+          # Pick the nearest occurrence of a slot so a run that crosses
+          # midnight still targets the intended publish time.
+          nearest_slot() {
+            local hour="$1"
+            local minute="$2"
+            local now today_ts tomorrow_ts chosen_ts today_diff tomorrow_diff
+            now="$(date -u +%s)"
+            today_ts="$(date -u -d "today ${hour}:${minute}" +%s)"
+            tomorrow_ts="$(date -u -d "tomorrow ${hour}:${minute}" +%s)"
+            today_diff=$(( today_ts - now ))
+            tomorrow_diff=$(( tomorrow_ts - now ))
+            if [ "$today_diff" -lt 0 ]; then today_diff=$(( -today_diff )); fi
+            if [ "$tomorrow_diff" -lt 0 ]; then tomorrow_diff=$(( -tomorrow_diff )); fi
+            if [ "$today_diff" -le "$tomorrow_diff" ]; then
+              chosen_ts="$today_ts"
+            else
+              chosen_ts="$tomorrow_ts"
+            fi
+            target_date="$(date -u -d "@${chosen_ts}" +%Y-%m-%d)"
+            publish_at="$(date -u -d "@${chosen_ts}" +%Y-%m-%dT%H:%M:%SZ)"
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            slot="${INPUT_SLOT:-0}"
+            if [ -n "${INPUT_PUBLISH_AT:-}" ]; then
+              publish_at="$INPUT_PUBLISH_AT"
+              target_date="${publish_at%%T*}"
+            else
+              publish_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              target_date="$(date -u +%Y-%m-%d)"
+            fi
+          elif [ "$EVENT_SCHEDULE" = "30 1 * * *" ] || [ "$EVENT_SCHEDULE" = "30 4 * * *" ]; then
+            slot=1
+            nearest_slot 13 30
+          else
+            slot=0
+            nearest_slot 01 30
+          fi
+          {
+            echo "SHORTS_SLOT=$slot"
+            echo "SHORTS_TARGET_DATE=$target_date"
+            echo "SHORTS_PUBLISH_AT=$publish_at"
+          } >> "$GITHUB_ENV"
+          echo "Target: slot $slot, date $target_date, publish at $publish_at"
+
       - name: Build and upload the Short
         env:
-          SHORTS_SLOT: ${{ github.event.schedule == '30 13 * * *' && '1' || inputs.slot || '0' }}
           SHORTS_TOPIC: ${{ inputs.topic }}
           SHORTS_DRY_RUN: ${{ inputs.dry_run }}
         run: node scripts/ci-daily-short.js

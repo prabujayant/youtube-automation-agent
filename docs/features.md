@@ -121,13 +121,15 @@ Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, 
 
 ### Running the daily Shorts in GitHub Actions
 
-`.github/workflows/shorts.yml` runs the same showcase pipeline in the cloud, twice a day at 01:30 and 13:30 UTC (07:00 and 19:00 IST), so the Shorts are generated and uploaded without a local server running:
+`.github/workflows/shorts.yml` runs the same showcase pipeline in the cloud. Each run prepares the Short for the **next** slot and uploads it as a private video with YouTube's `publishAt` set to 01:30 or 13:30 UTC (07:00/19:00 IST), so the video goes public on time even when GitHub's scheduler runs late:
 
 - Add `YOUTUBE_CREDENTIALS_JSON`, `YOUTUBE_TOKENS_JSON`, and `PIXABAY_API_KEY` as repository secrets (**Settings → Secrets and variables → Actions**). The workflow restores them into `config/credentials.json`, `config/tokens.json`, and `.env` on the runner; nothing secret is committed.
 - The workflow is free on a public repository. A private repository draws on the account's monthly Actions minutes — two runs a day is roughly 350–450 minutes a month.
-- Each run picks the destination from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating music bed, approves the licence-tagged clips, and uploads immediately. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
-- Trigger a manual run from **Actions → Travel Short → Run workflow**. `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
-- Scheduled workflows use UTC and may start a few minutes late. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
+- Each run picks the destination for the target publish date from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating music bed, approves the licence-tagged clips, and uploads scheduled. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
+- A second cron at 04:30/16:30 UTC retries the same slot if the first run failed. Before rendering, the workflow checks the channel, including private scheduled uploads, and skips when that slot already exists — retries never create duplicates.
+- Trigger a manual run from **Actions → Travel Short → Run workflow**. `publish_at` sets an exact UTC publish time (default: now), `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
+- GitHub's cron is best-effort and can start hours late. Because publishing uses YouTube's scheduled release, a late run only shortens the lead time; it does not move the publish time. If a run is delayed past the target, the Short is uploaded public immediately as a fallback.
+- Scheduled workflows use UTC. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
 - Google OAuth refresh tokens issued while the consent screen is in **Testing** expire after 7 days. To fix it permanently, open **Google Auth Platform → Audience** for the project that owns this OAuth client, click **Publish app** (staying unverified is fine for personal use), then mint a production token with `npm run youtube:reauth` and update the `YOUTUBE_TOKENS_JSON` secret. Existing testing tokens keep their 7-day expiry, so re-authorizing once after publishing is required.
 
 GitHub Actions replaces the local 07:00/19:00 scheduler for the daily Shorts; keep `ranked_shorts_automation` set to `false` on the local server so the two schedulers do not upload duplicates.

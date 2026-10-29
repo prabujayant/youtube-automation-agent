@@ -27,17 +27,78 @@ const DESTINATIONS = [
   'Queenstown New Zealand'
 ];
 
-function pickDestination(slot) {
+function resolveTarget() {
+  const rawDate = String(process.env.SHORTS_TARGET_DATE || '').trim();
+  const rawPublishAt = String(process.env.SHORTS_PUBLISH_AT || '').trim();
+  const publishAt = rawPublishAt ? new Date(rawPublishAt) : new Date();
+  if (Number.isNaN(publishAt.getTime())) {
+    throw new Error(`Invalid SHORTS_PUBLISH_AT: ${rawPublishAt}`);
+  }
+  const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    ? rawDate
+    : publishAt.toISOString().slice(0, 10);
+  return { publishAt, targetDate };
+}
+
+function pickDestination(slot, targetDate) {
   if (process.env.SHORTS_TOPIC) return String(process.env.SHORTS_TOPIC).trim();
-  const dayIndex = Math.floor(Date.now() / 86400000);
+  const dayMs = Date.parse(`${targetDate}T00:00:00Z`);
+  const dayIndex = Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
   return DESTINATIONS[(dayIndex * 2 + slot) % DESTINATIONS.length];
+}
+
+function normalize(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// A retry or a delayed run must never upload the same destination twice. The
+// channel itself is the source of truth, including private scheduled uploads.
+async function findExistingTarget(youtube, topic, publishAt) {
+  if (!youtube) return null;
+  const channel = await youtube.channels.list({ part: 'contentDetails', mine: true });
+  const uploads = channel.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) return null;
+
+  const playlist = await youtube.playlistItems.list({
+    part: 'contentDetails',
+    playlistId: uploads,
+    maxResults: 50
+  });
+  const ids = (playlist.data.items || [])
+    .map(item => item.contentDetails?.videoId)
+    .filter(Boolean);
+  if (!ids.length) return null;
+
+  const videos = await youtube.videos.list({ part: 'snippet,status', id: ids.join(',') });
+  const targetMs = publishAt.getTime();
+  const targetDay = publishAt.toISOString().slice(0, 10);
+  const wanted = normalize(topic);
+
+  for (const video of videos.data.items || []) {
+    const scheduledMs = video.status?.publishAt ? Date.parse(video.status.publishAt) : NaN;
+    if (Number.isFinite(scheduledMs) && Math.abs(scheduledMs - targetMs) <= 15 * 60 * 1000) {
+      return { video, reason: 'publishAt' };
+    }
+    const titled = normalize(video.snippet?.title);
+    const publishedMs = video.snippet?.publishedAt ? Date.parse(video.snippet.publishedAt) : NaN;
+    const publishedDay = Number.isFinite(publishedMs)
+      ? new Date(publishedMs).toISOString().slice(0, 10)
+      : '';
+    if (wanted && titled.includes(wanted) && publishedDay === targetDay) {
+      return { video, reason: 'title+date' };
+    }
+  }
+  return null;
 }
 
 (async () => {
   const slot = Number(process.env.SHORTS_SLOT) === 1 ? 1 : 0;
   const dryRun = String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true';
-  const topic = pickDestination(slot);
+  const { publishAt, targetDate } = resolveTarget();
+  const topic = pickDestination(slot, targetDate);
+  const scheduled = publishAt.getTime() > Date.now() + 60000;
   console.log(`Destination: ${topic} (slot ${slot}${dryRun ? ', dry run' : ''})`);
+  console.log(`Target publish: ${publishAt.toISOString()} (${scheduled ? 'scheduled' : 'immediate'})`);
 
   const db = new Database();
   await db.initialize();
@@ -52,6 +113,15 @@ function pickDestination(slot) {
     console.log(`YouTube token verified; access token valid until ${new Date(refreshed.credentials.expiry_date).toISOString()}`);
     const publishing = new PublishingSchedulingAgent(db, credentials);
     await publishing.initialize();
+
+    const existing = await findExistingTarget(publishing.youtube, topic, publishAt);
+    if (existing) {
+      const videoId = existing.video.id;
+      const state = existing.video.status?.publishAt ? 'scheduled' : 'published';
+      console.log(`Already ${state}: https://www.youtube.com/watch?v=${videoId} (matched by ${existing.reason})`);
+      return;
+    }
+
     const logger = publishing.logger;
     const stock = new StockFootageService({ logger, credentials });
     const ranked = new RankedShortsService(db, publishing, {
@@ -86,11 +156,14 @@ function pickDestination(slot) {
 
     await ranked.approve(rendered.id, {
       confirmed: true,
-      publishTime: new Date().toISOString(),
+      publishTime: publishAt.toISOString(),
       privacyStatus: 'public'
     });
     const published = await ranked.publishNow(rendered.id);
-    console.log(`Published: ${published.youtubeUrl || published.youtubeId || published.id}`);
+    const url = published.youtubeUrl || published.youtubeId || published.id;
+    console.log(scheduled
+      ? `Scheduled: ${url} (publishes ${publishAt.toISOString()})`
+      : `Published: ${url}`);
   } finally {
     await db.close().catch(() => {});
   }
