@@ -79,7 +79,7 @@ function usage() {
     '  --max-seconds <10-180> Hard cap for the Short (default: 60, showcase: 24)',
     '  --fit crop|blur       Full-bleed crop (default) or blurred letterbox',
     '  --render              Also render the episode right after planning',
-    '  --music <file|auto>   Music bed: a local file, or "auto" for a free CC-BY track (showcase defaults to auto)',
+    '  --music <file|auto>   Music bed: a local file, or "auto" for a royalty-free viral-style track (showcase defaults to auto)',
     '  --privacy <status>    Default privacy for the later schedule',
     '',
     'clips.json format:',

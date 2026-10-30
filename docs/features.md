@@ -113,7 +113,7 @@ Showcase defaults: 8 clips of 3 seconds (24 seconds total), AI-written overlay/t
 
 ### Music beds
 
-`--music auto` (the showcase default) picks a free CC-BY track from the built-in Incompetech catalog — Kevin MacLeod's music, among the most-used Shorts soundtracks — rotates the choice per day, downloads it once into `data/footage/music/`, and writes the attribution line into the description automatically. Drop your own `.mp3`/`.m4a`/`.wav`/`.ogg` files into `data/footage/music-library/` and the pipeline rotates through those instead (credited as "from the channel music library"). Without either, showcase episodes fall back to a locally synthesized ambient pad; ranked episodes keep the original clip audio only.
+`--music auto` (the showcase default) picks a royalty-free viral-style track from the built-in Pixabay catalog — phonk, upbeat electronic, funk, and tropical-house instrumentals curated from tracks that were not Content ID registered when checked — rotates the choice per day and per slot, downloads it once into `data/footage/music/`, and credits the artist in the description automatically. Actual YouTube Shorts library songs cannot be attached through the YouTube Data API; embedding a licensed trending song in the MP4 would risk a Content ID claim, so the automated pipeline uses these equivalent viral-style beds instead. Drop your own `.mp3`/`.m4a`/`.wav`/`.ogg` files into `data/footage/music-library/` and the pipeline rotates through those instead (credited as "from the channel music library"). Without either, showcase episodes fall back to a locally synthesized ambient pad; ranked episodes keep the original clip audio only.
 
 ### Daily ranked Shorts automation
 

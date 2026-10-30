@@ -759,12 +759,13 @@ class DailyAutomation {
           format: 'showcase',
           source: this.stockFootage.provider,
           music: 'auto',
-          musicMood: slot % 2 ? 'tropical' : 'uplifting',
+          musicMood: slot % 2 ? 'viral-tropical' : 'viral-uplifting',
           privacyStatus: privacy
         });
         const rendered = await this.rankedShorts.render(episode.id);
-        // The automation only selects licence-tagged stock clips and CC-BY
-        // music, so it can confirm the rights gate itself before scheduling.
+        // The automation only selects licence-tagged stock clips and
+        // royalty-free music, so it can confirm the rights gate itself before
+        // scheduling.
         const scheduled = await this.rankedShorts.approve(rendered.id, {
           confirmed: true,
           publishTime: publishTime.toISOString(),

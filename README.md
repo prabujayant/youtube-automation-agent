@@ -87,7 +87,7 @@ Each item links to its walkthrough in the [feature guide](docs/features.md).
 - [Resumable generation](docs/features.md#resumable-generation): every stage is checkpointed, so a crash or timeout resumes where it stopped instead of starting over.
 - [AI video generation](docs/features.md#ai-video-generation): local slideshow by default; Seedance, MiniMax H3, Gemini Omni, Kling, or Wan for real clips, with a cap on paid seconds.
 - [Shorts Repurposing Studio](docs/features.md#shorts-repurposing-studio): turn an approved video into three 9:16 Short drafts with burned-in captions, reusing existing media so no new generation credits are spent.
-- [Ranked Shorts Studio](docs/features.md#ranked-shorts-studio): build licensed-clip Shorts in two formats — a ranked #N-to-#1 countdown or a TravelWonders-style destination showcase with a top-center overlay — from `npm run shorts:ranked`, with Pixabay/Pexels stock footage, auto-rotating free CC-BY music beds (or your own songs in `data/footage/music-library/`), and an opt-in daily automation loop.
+- [Ranked Shorts Studio](docs/features.md#ranked-shorts-studio): build licensed-clip Shorts in two formats — a ranked #N-to-#1 countdown or a TravelWonders-style destination showcase with a top-center overlay — from `npm run shorts:ranked`, with Pixabay/Pexels stock footage, auto-rotating royalty-free viral-style music beds (or your own songs in `data/footage/music-library/`), and an opt-in daily automation loop.
 
 **Review**
 - **Content review:** quality checks, metadata editing, approval, and scheduling for each video.

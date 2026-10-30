@@ -1953,7 +1953,7 @@ class SystemTest {
   async testMusicBedService() {
     const fs = require('fs').promises;
     const os = require('os');
-    const { MusicBedService } = require('./utils/music-bed-service');
+    const { MusicBedService, MUSIC_CATALOG } = require('./utils/music-bed-service');
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-music-bed-'));
     const downloads = [];
     const fakeFetch = async url => {
@@ -1965,9 +1965,9 @@ class SystemTest {
         cacheRoot: path.join(directory, 'cache'),
         fetch: fakeFetch,
         catalog: [
-          { track: 'Carefree', mood: 'uplifting' },
-          { track: 'Wallpaper', mood: 'uplifting' },
-          { track: 'Daily Beetle', mood: 'playful' }
+          { track: 'Carefree', artist: 'Test Artist', mood: 'uplifting' },
+          { track: 'Wallpaper', artist: 'Test Artist', mood: 'uplifting' },
+          { track: 'Daily Beetle', artist: 'Test Artist', mood: 'playful' }
         ]
       });
       const first = await service.resolve({ mood: 'uplifting', dayIndex: 0 });
@@ -1992,8 +1992,20 @@ class SystemTest {
       if (!broken) throw new Error('Music service did not surface download failures');
 
       const credit = service.credit(first.entry);
-      if (!credit.includes('Kevin MacLeod') || !credit.includes('CC-BY')) {
+      if (!credit.includes('Test Artist') || !credit.includes('Pixabay')) {
         throw new Error('Music credit is missing attribution details');
+      }
+
+      const license = MusicBedService.license();
+      if (license.license !== 'pixabay' || !license.licenseSource.includes('pixabay.com')) {
+        throw new Error('Music service did not report the Pixabay license');
+      }
+      if (MUSIC_CATALOG.length < 8) {
+        throw new Error('The built-in viral music catalog is too small to rotate');
+      }
+      if (!MUSIC_CATALOG.every(entry => entry.url?.startsWith('https://cdn.pixabay.com/')
+        && entry.artist && /^viral-(uplifting|tropical)$/.test(entry.mood))) {
+        throw new Error('The built-in viral music catalog has incomplete metadata');
       }
 
       const libraryDir = path.join(directory, 'library');

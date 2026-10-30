@@ -14,7 +14,7 @@ on:
         description: Destination override (optional)
         required: false
       slot:
-        description: '0 = morning (uplifting music), 1 = evening (tropical music)'
+        description: '0 = morning (viral upbeat music), 1 = evening (viral tropical music)'
         required: false
         default: '0'
       publish_at:
