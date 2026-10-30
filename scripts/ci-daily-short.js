@@ -145,6 +145,9 @@ async function findExistingTarget(youtube, topic, publishAt) {
     });
     console.log(`Episode: ${episode.id}`);
     console.log(`Title: ${episode.title}`);
+    if (episode.assets?.musicPath) {
+      console.log(`Music bed: ${path.basename(episode.assets.musicPath)}`);
+    }
 
     const rendered = await ranked.render(episode.id);
     console.log(`Rendered ${rendered.duration}s: ${rendered.assets?.video?.path}`);
