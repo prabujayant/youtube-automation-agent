@@ -139,11 +139,11 @@
       <section id="shorts-view" class="view">
         <div class="section-intro"><div><h2>Ranked Shorts</h2><p>9:16 countdown Shorts assembled only from licensed clips. Plan, render, then approve before anything is scheduled.</p></div><span id="shorts-stock-status" class="status">Checking stock access...</span></div>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">NEW EPISODE</p><h2>Build a countdown</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">NEW EPISODE</p><h2>Build a Short</h2></div></div>
           <form id="ranked-shorts-form" class="form-grid two">
             <label><span>Topic</span><input name="topic" required maxlength="120" placeholder="Dogs failing at fetch"></label>
             <label><span>Clip source</span><select name="source" id="ranked-source"><option value="stock">Pixabay / Pexels stock</option><option value="folder">Local folder</option></select></label>
-            <label><span>Format</span><select name="format" id="ranked-format"><option value="showcase">Destination showcase (travel)</option><option value="ranked">Ranked countdown</option></select></label>
+            <label><span>Format</span><select name="format" id="ranked-format"><option value="viral" selected>Viral reasons (travel, 3 reasons + CTA)</option><option value="showcase">Destination showcase (travel)</option><option value="ranked">Ranked countdown</option></select></label>
             <label data-ranked-stock><span>Search queries (optional)</span><input name="queries" placeholder="dog fail, dog jump, dog pool"></label>
             <label data-ranked-folder hidden><span>Clips folder</span><input name="clipsDir" placeholder="C:\path\to\clips"></label>
             <label data-ranked-folder hidden><span>License</span><select name="license">
@@ -169,7 +169,7 @@
             </select></label>
             <label data-ranked-musicfile><span>Music file</span><input name="musicPath" placeholder="C:\path\to\music.mp3"></label>
             <label class="span-two"><span>Showcase overlay (optional)</span><input name="overlay" maxlength="24" placeholder="♥ Venice"></label>
-            <div class="form-actions span-two"><button class="button" type="submit" id="ranked-plan-button">Plan countdown</button><button class="button secondary" type="button" id="ranked-refresh">Refresh</button></div>
+            <div class="form-actions span-two"><button class="button" type="submit" id="ranked-plan-button">Plan Short</button><button class="button secondary" type="button" id="ranked-refresh">Refresh</button></div>
           </form>
           <p class="callout">Stock mode downloads portrait clips from a free stock API (Pixabay or Pexels key in .env). Nothing is uploaded until you approve and schedule an episode.</p>
         </article>

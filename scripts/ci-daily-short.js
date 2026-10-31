@@ -27,6 +27,8 @@ const DESTINATIONS = [
   'Queenstown New Zealand'
 ];
 
+const VIRAL_COUNT = 7;
+
 function resolveTarget() {
   const rawDate = String(process.env.SHORTS_TARGET_DATE || '').trim();
   const rawPublishAt = String(process.env.SHORTS_PUBLISH_AT || '').trim();
@@ -97,10 +99,12 @@ async function findExistingTarget(youtube, topic, publishAt) {
 (async () => {
   const slot = Number(process.env.SHORTS_SLOT) === 1 ? 1 : 0;
   const dryRun = String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true';
+  const requestedFormat = String(process.env.SHORTS_FORMAT || '').toLowerCase();
+  const format = ['showcase', 'viral', 'ranked'].includes(requestedFormat) ? requestedFormat : 'viral';
   const { publishAt, targetDate } = resolveTarget();
   const topic = pickDestination(slot, targetDate);
   const scheduled = publishAt.getTime() > Date.now() + 60000;
-  console.log(`Destination: ${topic} (slot ${slot}${dryRun ? ', dry run' : ''})`);
+  console.log(`Destination: ${topic} (slot ${slot}, ${format}${dryRun ? ', dry run' : ''})`);
   console.log(`Target publish: ${publishAt.toISOString()} (${scheduled ? 'scheduled' : 'immediate'})`);
 
   const db = new Database();
@@ -139,8 +143,8 @@ async function findExistingTarget(youtube, topic, publishAt) {
     const episode = await ranked.plan({
       topic,
       clips,
-      count: clips.length,
-      format: 'showcase',
+      count: format === 'showcase' ? 8 : VIRAL_COUNT,
+      format,
       source: stock.provider,
       music: 'auto',
       musicMood: slot === 1 ? 'viral-tropical' : 'viral-uplifting',

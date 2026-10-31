@@ -1926,7 +1926,7 @@ $('#ranked-shorts-form').addEventListener('submit', async event => {
   const musicMode = values.musicMode || 'auto';
   const body = {
     topic: values.topic.trim(),
-    format: values.format || 'showcase',
+    format: values.format || 'viral',
     overlay: values.overlay.trim() || null,
     count: Number(values.count),
     maxSeconds: Number(values.maxSeconds),

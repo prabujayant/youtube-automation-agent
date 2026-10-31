@@ -37,6 +37,7 @@ class SystemTest {
       { name: 'Shorts Repurposing Studio', test: () => this.testShortsRepurposingStudio() },
       { name: 'Ranked Shorts Studio', test: () => this.testRankedShortsStudio() },
       { name: 'Showcase Format', test: () => this.testShowcaseFormat() },
+      { name: 'Viral Reasons Format', test: () => this.testViralFormat() },
       { name: 'Music Bed Service', test: () => this.testMusicBedService() },
       { name: 'Stock Footage Service', test: () => this.testStockFootageService() },
       { name: 'Daily Ranked Shorts Automation', test: () => this.testDailyRankedShortsAutomation() },
@@ -2110,6 +2111,101 @@ class SystemTest {
       await fs.rm(directory, { recursive: true, force: true });
     }
     this.logger.info('Showcase format test completed successfully');
+  }
+
+  async testViralFormat() {
+    const fs = require('fs').promises;
+    const os = require('os');
+    const { runFFmpeg } = require('./utils/ffmpeg');
+    const { PublishingSchedulingAgent } = require('./agents/publishing-scheduling-agent');
+    const { RankedShortsService } = require('./utils/ranked-shorts-service');
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yaa-viral-'));
+    const db = new Database();
+    db.dbPath = path.join(directory, 'viral.db');
+    await db.initialize();
+    try {
+      const clipsDir = path.join(directory, 'clips');
+      await fs.mkdir(clipsDir, { recursive: true });
+      const colors = ['#0e7490', '#155e75', '#164e63', '#1e3a8a', '#3730a3', '#4c1d95', '#5b21b6'];
+      for (let index = 0; index < 7; index++) {
+        await runFFmpeg([
+          '-y', '-f', 'lavfi', '-i', `color=c=${colors[index]}:s=320x240:r=24:d=3`,
+          '-f', 'lavfi', '-i', 'sine=frequency=420:duration=3',
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest',
+          path.join(clipsDir, `0${index + 1}.mp4`)
+        ]);
+      }
+      await fs.writeFile(path.join(clipsDir, 'clips.json'), JSON.stringify({
+        clips: colors.map((_color, index) => ({
+          file: `0${index + 1}.mp4`,
+          title: `Iceland moment ${index + 1}`,
+          license: 'licensed',
+          source: 'Pixabay Content License — https://pixabay.com/service/license-summary/',
+          score: 10 - index
+        }))
+      }), 'utf8');
+
+      const publishing = new PublishingSchedulingAgent(db, {});
+      const service = new RankedShortsService(db, publishing, {
+        dataRoot: path.join(directory, 'ranked'), width: 180, height: 320, logger: this.logger
+      });
+      const planned = await service.plan({
+        topic: 'Iceland',
+        format: 'viral',
+        clipsDir,
+        count: 7
+      });
+      if (planned.status !== 'planned' || planned.clipPlan.length !== 7) {
+        throw new Error('Viral plan did not persist its seven clips');
+      }
+      if (!/3 Reasons/i.test(planned.title)) {
+        throw new Error('Viral title does not lead with the three-reason promise');
+      }
+      if (!/Which one would you do first/i.test(planned.description)) {
+        throw new Error('Viral description lost its comment-driving question');
+      }
+      if (!planned.tags.includes('travel')) {
+        throw new Error('Viral tags are missing the travel topic');
+      }
+      if (planned.tags.some(tag => String(tag).toLowerCase() === 'ranking')) {
+        throw new Error('Viral tags should not include the ranked-format "ranking" tag');
+      }
+      if (
+        planned.clipPlan[0].reason !== 1 ||
+        planned.clipPlan[5].reason !== 3 ||
+        planned.clipPlan[6].cta !== true
+      ) {
+        throw new Error('Viral plan did not group two clips per reason and reserve the final clip for the CTA');
+      }
+
+      const rendered = await service.render(planned.id);
+      const videoPath = rendered.assets?.video?.path;
+      if (rendered.status !== 'rendered' || !videoPath || !rendered.assets?.captions?.path) {
+        throw new Error('Viral rendering did not persist its MP4 and overlay');
+      }
+      if (!rendered.assets.captions.path.endsWith('.ass')) {
+        throw new Error('Viral format should burn an ASS overlay, not an SRT');
+      }
+      const overlay = await fs.readFile(rendered.assets.captions.path, 'utf8');
+      // Hook text is word-wrapped in the ASS file, so check for key words.
+      if (!overlay.includes('reasons') || !overlay.includes('visit') || !overlay.includes('Iceland') || !overlay.includes('1.')) {
+        throw new Error('Viral overlay lost its hook or numbered reasons');
+      }
+      // CTA text is word-wrapped in the ASS file (\N line breaks).
+      if (!overlay.includes('Which one would you') || !overlay.includes('do first?')) {
+        throw new Error('Viral overlay lost its comment CTA');
+      }
+      if (rendered.duration < 17 || rendered.duration > 22) {
+        throw new Error(`Viral duration ${rendered.duration}s does not match seven fast cuts`);
+      }
+      await runFFmpeg(['-v', 'error', '-i', videoPath, '-f', 'null', '-']);
+      const thumbnail = await fs.stat(rendered.assets.thumbnail.path);
+      if (thumbnail.size <= 0) throw new Error('Viral format did not render a thumbnail');
+    } finally {
+      await db.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+    this.logger.info('Viral format test completed successfully');
   }
 
   async testProvenanceDesk() {

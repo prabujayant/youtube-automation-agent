@@ -17,6 +17,10 @@ on:
         description: '0 = morning (viral upbeat music), 1 = evening (viral tropical music)'
         required: false
         default: '0'
+      format:
+        description: 'viral (default), showcase, or ranked'
+        required: false
+        default: 'viral'
       publish_at:
         description: 'Optional UTC publish time, e.g. 2026-10-30T13:30:00Z (default: now)'
         required: false
@@ -119,6 +123,7 @@ jobs:
       - name: Build and upload the Short
         env:
           SHORTS_TOPIC: ${{ inputs.topic }}
+          SHORTS_FORMAT: ${{ inputs.format }}
           SHORTS_DRY_RUN: ${{ inputs.dry_run }}
         run: node scripts/ci-daily-short.js
 

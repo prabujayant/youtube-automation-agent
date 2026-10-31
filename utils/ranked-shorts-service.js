@@ -18,6 +18,15 @@ const DEFAULT_HOOK_SECONDS = 1.6;
 const SHOWCASE_DEFAULT_CLIPS = 8;
 const SHOWCASE_MAX_SECONDS = 24;
 const SHOWCASE_CLIP_SECONDS = 3;
+const VIRAL_DEFAULT_CLIPS = 7;
+const VIRAL_CLIP_SECONDS = 2.8;
+const VIRAL_HOOK_SECONDS = 1.4;
+const VIRAL_REASON_COUNT = 3;
+const VIRAL_FALLBACK_REASONS = [
+  'The views stop you mid-step',
+  'The food is a reason on its own',
+  'The streets are made for wandering'
+];
 const CAPTION_STYLE =
   'FontName=Arial,FontSize=18,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,' +
   'BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=220';
@@ -75,6 +84,49 @@ function extractJson(text) {
   }
 }
 
+// libass has no colour-emoji font fallback, so overlay text is kept
+// typographic. Emoji and regional-indicator flags stay in the YouTube title
+// and description, where the platform renders them properly.
+function overlayText(value, maximum = 120) {
+  return String(value || '')
+    // Basic emoji/ideograph removal for libass overlays (no colour-emoji fallback).
+    .replace(/[\u{1F600}-\u{1F64F}]/gu, '')
+    .replace(/[\u{1F300}-\u{1F5FF}]/gu, '')
+    .replace(/[\u{1F680}-\u{1F6FF}]/gu, '')
+    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '')
+    .replace(/[\u{2600}-\u{26FF}]/gu, '')
+    .replace(/[\u{2700}-\u{27BF}]/gu, '')
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
+    .replace(/\u{200D}/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maximum);
+}
+
+function assSafe(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/[{}]/g, '')
+    .replace(/\r?\n/g, ' ');
+}
+
+function wrapAssText(value, maximum) {
+  const text = overlayText(value);
+  if (!text) return '';
+  const lines = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    if (line && `${line} ${word}`.length > maximum) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, 4).map(assSafe).join('\\N');
+}
+
 class RankedShortsService {
   constructor(db, publishing, options = {}) {
     this.db = db;
@@ -124,11 +176,16 @@ class RankedShortsService {
   async plan(input = {}) {
     const topic = String(input.topic || '').trim();
     if (!topic) throw this.badRequest('A topic is required for a ranked Short');
-    const format = input.format === 'showcase' ? 'showcase' : 'ranked';
+    const format = ['showcase', 'viral'].includes(input.format) ? input.format : 'ranked';
     const clips = await this.collectClips(input);
     const preferredCount = input.count
-      || (format === 'showcase' ? SHOWCASE_DEFAULT_CLIPS : Math.min(7, clips.length));
-    const count = clamp(preferredCount, MIN_CLIPS, Math.min(MAX_CLIPS, clips.length));
+      || (format === 'showcase'
+        ? SHOWCASE_DEFAULT_CLIPS
+        : format === 'viral'
+          ? Math.min(VIRAL_DEFAULT_CLIPS, clips.length)
+          : Math.min(7, clips.length));
+    const formatMaximum = format === 'viral' ? VIRAL_DEFAULT_CLIPS : MAX_CLIPS;
+    const count = clamp(preferredCount, MIN_CLIPS, Math.min(formatMaximum, clips.length));
     if (count < MIN_CLIPS) {
       throw this.badRequest(`A ranked Short needs at least ${MIN_CLIPS} licensed clips`);
     }
@@ -147,7 +204,7 @@ class RankedShortsService {
     }
 
     const maxSeconds = clamp(
-      input.maxSeconds || (format === 'showcase' ? SHOWCASE_MAX_SECONDS : DEFAULT_MAX_SECONDS),
+      input.maxSeconds || (format === 'showcase' || format === 'viral' ? SHOWCASE_MAX_SECONDS : DEFAULT_MAX_SECONDS),
       10,
       HARD_MAX_SECONDS
     );
@@ -174,15 +231,21 @@ class RankedShortsService {
     }
     const ranked = format === 'showcase'
       ? await this.buildShowcasePlan(topic, copied, { count, overlay: input.overlay })
-      : await this.rankClips(topic, copied, {
-        count,
-        hook: input.hook,
-        countdown: input.countdown !== false
-      });
+      : format === 'viral'
+        ? await this.buildViralPlan(topic, copied, { count, hook: input.hook })
+        : await this.rankClips(topic, copied, {
+          count,
+          hook: input.hook,
+          countdown: input.countdown !== false
+        });
     const plan = ranked.clips.slice(0, count);
     const rights = this.validateRights(plan);
 
-    const description = this.buildDescription(topic, ranked, plan, { format, musicCredit });
+    const description = this.buildDescription(topic, ranked, plan, {
+      format,
+      musicCredit,
+      viral: ranked.viral
+    });
 
     const episode = await this.db.createRankedShortEpisode({
       id: episodeId,
@@ -197,7 +260,10 @@ class RankedShortsService {
         format,
         maxSeconds,
         fit: input.fit === 'blur' ? 'blur' : 'crop',
-        hookSeconds: format === 'showcase' ? 0 : DEFAULT_HOOK_SECONDS,
+        hookSeconds: format === 'showcase'
+          ? 0
+          : format === 'viral' ? VIRAL_HOOK_SECONDS : DEFAULT_HOOK_SECONDS,
+        viral: format === 'viral' ? ranked.viral : null,
         overlay: ranked.overlay || null,
         rights,
         musicPath,
@@ -438,6 +504,110 @@ class RankedShortsService {
     };
   }
 
+  // The viral format is a short, saveable travel listicle: a first-second
+  // hook, three concrete reasons, and a comment-driving question. It uses the
+  // same licensed clips but gives viewers a reason to watch to the end instead
+  // of only admiring the scenery.
+  async buildViralPlan(topic, clips, options = {}) {
+    const wanted = Math.min(
+      Math.max(MIN_CLIPS, Number(options.count) || VIRAL_DEFAULT_CLIPS),
+      clips.length
+    );
+    const ordered = clips
+      .slice()
+      .sort((left, right) => (right.score || 0) - (left.score || 0) || left.position - right.position)
+      .slice(0, wanted);
+    const hasCtaClip = ordered.length >= 4;
+    const reasonClips = hasCtaClip ? ordered.length - 1 : ordered.length;
+    const reasonCount = Math.min(VIRAL_REASON_COUNT, reasonClips);
+    const metadata = await this.planViralMetadata(topic, reasonCount, options.hook);
+    const reasons = metadata.reasons.slice(0, reasonCount);
+    while (reasons.length < reasonCount) {
+      reasons.push(VIRAL_FALLBACK_REASONS[reasons.length % VIRAL_FALLBACK_REASONS.length]);
+    }
+
+    const planned = ordered.map((clip, index) => {
+      const cta = hasCtaClip && index === ordered.length - 1;
+      const reason = cta ? null : Math.min(reasonCount, Math.floor((index * reasonCount) / reasonClips) + 1);
+      return {
+        ...clip,
+        rank: index + 1,
+        duration: VIRAL_CLIP_SECONDS,
+        reason,
+        cta,
+        caption: cta ? '' : reasons[reason - 1]
+      };
+    });
+
+    const ranking = this.finalizeRanking(topic, planned, {
+      hook: metadata.hook,
+      title: metadata.title,
+      tags: metadata.tags,
+      description: metadata.description,
+      source: 'viral'
+    });
+    ranking.viral = { reasons, cta: metadata.cta };
+    return ranking;
+  }
+
+  async planViralMetadata(topic, reasonCount, hookOverride) {
+    const shortName = topic.split(',')[0].trim() || topic;
+    const fallback = {
+      hook: truncate(hookOverride || `${reasonCount} reasons to visit ${shortName}`, 45),
+      reasons: VIRAL_FALLBACK_REASONS.slice(0, reasonCount),
+      cta: 'Which one would you do first?',
+      title: truncate(`${reasonCount} Reasons to Visit ${topic}`, 90),
+      description: `Here are ${reasonCount} reasons ${shortName} belongs on your next trip.`,
+      tags: ['travel', 'traveltok', 'shorts', 'bucketlist',
+        ...topic.split(/[^a-z0-9]+/i).filter(word => word.length > 3).slice(0, 4)]
+    };
+
+    const ai = this.getAI();
+    if (!ai) return fallback;
+    try {
+      const prompt = [
+        'You write fast-paced travel listicle Shorts that people save, share, and comment on.',
+        `Destination: ${topic}`,
+        `Write exactly ${reasonCount} concrete reasons to visit. Keep every claim plausible and avoid precise prices, dates, statistics, or named businesses.`,
+        'Return JSON only, in this shape:',
+        `{"hook":"${reasonCount} reasons to visit ${shortName}","reasons":["...","..."],"cta":"Which one would you do first?","title":"${reasonCount} Reasons to Visit ${topic} 🌍","description":"Two short sentences about the destination.","tags":["travel","..."]}`,
+        'Rules:',
+        `- hook: max 42 characters, no emoji, creates curiosity without clickbait that cannot be supported by the footage.`,
+        `- reasons: exactly ${reasonCount} strings, each max 52 characters, starting with a concrete image or experience (for example "Soak in a geothermal lagoon"). No emoji.`,
+        '- cta: max 30 characters, a question that invites comments. No emoji.',
+        `- title: max 85 characters, includes "${reasonCount} Reasons", the destination, and at most one flag emoji.`,
+        '- description: two natural sentences, no hashtags, no "Discover" template.',
+        '- tags: 6 to 10 short lowercase tags.'
+      ].join('\n');
+      const response = await ai.generateText(prompt, { maxTokens: 700, temperature: 0.75 });
+      const parsed = extractJson(response);
+      if (!parsed) return fallback;
+
+      const reasons = (Array.isArray(parsed.reasons) ? parsed.reasons : [])
+        .map(reason => truncate(overlayText(reason, 70), 60))
+        .filter(reason => reason.length >= 4)
+        .slice(0, reasonCount);
+      while (reasons.length < reasonCount) {
+        reasons.push(VIRAL_FALLBACK_REASONS[reasons.length % VIRAL_FALLBACK_REASONS.length]);
+      }
+      const parsedTitle = truncate(parsed.title || '', 90);
+      const title = /reason/i.test(parsedTitle) && parsedTitle.length >= 10
+        ? parsedTitle
+        : fallback.title;
+      return {
+        hook: truncate(overlayText(hookOverride || parsed.hook || fallback.hook, 45), 45),
+        reasons,
+        cta: truncate(overlayText(parsed.cta || fallback.cta, 30), 30),
+        title,
+        description: truncate(parsed.description || fallback.description, 280),
+        tags: Array.isArray(parsed.tags) && parsed.tags.length ? parsed.tags : fallback.tags
+      };
+    } catch (error) {
+      this.logger.warn(`Viral metadata generation failed (${error.message}); using template`);
+      return fallback;
+    }
+  }
+
   applyRanking(clips, parsed, count) {
     if (!Array.isArray(parsed.ranking) || !parsed.ranking.length) return null;
     const used = new Set();
@@ -473,7 +643,8 @@ class RankedShortsService {
 
   finalizeRanking(topic, selected, meta = {}) {
     const showcase = meta.source === 'showcase';
-    const ordered = showcase
+    const viral = meta.source === 'viral';
+    const ordered = showcase || viral
       ? selected.slice().sort((left, right) => left.rank - right.rank)
       : selected.slice().sort((left, right) => right.rank - left.rank);
     const hook = truncate(meta.hook || (showcase ? '' : 'Wait for #1'), 45);
@@ -481,7 +652,8 @@ class RankedShortsService {
     const tags = [...new Set([
       ...(Array.isArray(meta.tags) ? meta.tags : []),
       'shorts',
-      ...(showcase ? [] : ['ranking']),
+      ...(showcase || viral ? [] : ['ranking']),
+      ...(viral ? ['travel'] : []),
       ...topic.split(/[^a-z0-9]+/i).filter(word => word.length > 3).slice(0, 6)
     ])].map(tag => String(tag).replace(/^#/, '').trim()).filter(Boolean).slice(0, 15);
     return {
@@ -496,6 +668,7 @@ class RankedShortsService {
 
   buildDescription(topic, ranking, plan, options = {}) {
     const showcase = options.format === 'showcase';
+    const viral = options.format === 'viral';
     // YouTube descriptions stay human-readable: licence provenance lives in the
     // episode record, while only CC-BY footage (which requires attribution) is
     // listed clip by clip.
@@ -508,14 +681,19 @@ class RankedShortsService {
       ? ranking.description.trim()
       : showcase
         ? `Discover ${topic}.`
-        : `${topic}: a ranked countdown of the ${plan.length} best moments.`;
+        : viral
+          ? `Here are the reasons ${topic} belongs on your next trip.`
+          : `${topic}: a ranked countdown of the ${plan.length} best moments.`;
     const tagSet = new Set((ranking.tags || [])
       .map(tag => String(tag).replace(/[^\p{L}\p{N}]/gu, ''))
       .filter(Boolean));
+    const hashtagTags = [
+      ...(viral && ![...tagSet].some(tag => tag.toLowerCase() === 'travel') ? ['travel'] : []),
+      ...[...tagSet].filter(tag => tag.toLowerCase() !== 'shorts')
+    ];
     const hashtags = [
       '#shorts',
-      ...[...tagSet]
-        .filter(tag => tag.toLowerCase() !== 'shorts')
+      ...hashtagTags
         .slice(0, 4)
         .map(tag => `#${tag}`)
     ].join(' ');
@@ -524,6 +702,7 @@ class RankedShortsService {
         intro,
         '',
         ...(showcase ? [`📍 ${topic}`, '🌍 Save this for your next trip!'] : []),
+        ...(viral ? [`📍 ${topic}`, ...(options.viral?.cta ? [`👉 ${options.viral.cta}`] : [])] : []),
         ...(options.musicCredit ? [`🎵 ${options.musicCredit}`] : []),
         ...(stockSources.length ? [`📷 Footage: ${stockSources.join('; ')}`] : []),
         ...(attributionRequired.length
@@ -562,11 +741,22 @@ class RankedShortsService {
     try {
       const maxSeconds = clamp(episode.assets?.maxSeconds || DEFAULT_MAX_SECONDS, 10, HARD_MAX_SECONDS);
       const fit = episode.assets?.fit === 'blur' ? 'blur' : 'crop';
-      const format = episode.assets?.format === 'showcase' ? 'showcase' : 'ranked';
+      const format = ['showcase', 'viral'].includes(episode.assets?.format)
+        ? episode.assets.format
+        : 'ranked';
       const hookSeconds = format === 'showcase'
         ? 0
-        : clamp(episode.assets?.hookSeconds || DEFAULT_HOOK_SECONDS, 1, 3);
-      const prepared = await this.allocateDurations(episode.clipPlan, maxSeconds - hookSeconds);
+        : clamp(
+          episode.assets?.hookSeconds || (format === 'viral' ? VIRAL_HOOK_SECONDS : DEFAULT_HOOK_SECONDS),
+          1,
+          3
+        );
+      // The viral hook sits on top of the first clip; ranked uses a separate
+      // hook card, so only the ranked budget is reduced by the hook length.
+      const prepared = await this.allocateDurations(
+        episode.clipPlan,
+        maxSeconds - (format === 'ranked' ? hookSeconds : 0)
+      );
 
       const segments = [];
       const audioChecks = [];
@@ -574,7 +764,9 @@ class RankedShortsService {
         const outputPath = path.join(segmentsDir, `${String(index + 1).padStart(2, '0')}.mp4`);
         const hasAudio = await this.hasAudioStream(clip.copiedPath);
         audioChecks.push({ file: path.basename(clip.copiedPath), hasAudio });
-        await this.renderSegment({ ...clip, hasAudio }, outputPath, fit);
+        await this.renderSegment({ ...clip, hasAudio }, outputPath, fit, {
+          motion: format === 'viral' ? 'zoom' : null
+        });
         const duration = await this.getDuration(outputPath);
         segments.push({ ...clip, segmentPath: outputPath, duration });
       }
@@ -584,6 +776,9 @@ class RankedShortsService {
       if (format === 'showcase') {
         captionsPath = path.join(episodeDir, 'captions.ass');
         await fs.writeFile(captionsPath, this.buildShowcaseOverlay(episode, segments), 'utf8');
+      } else if (format === 'viral') {
+        captionsPath = path.join(episodeDir, 'captions.ass');
+        await fs.writeFile(captionsPath, this.buildViralOverlay(episode, segments), 'utf8');
       } else {
         const hookPath = path.join(segmentsDir, '00-hook.mp4');
         await this.renderHookCard(hookPath, hookSeconds);
@@ -593,18 +788,26 @@ class RankedShortsService {
       }
 
       const finalPath = path.join(episodeDir, 'final.mp4');
-      const musicPath = format === 'showcase' && !episode.assets?.musicPath
+      const musicPath = ['showcase', 'viral'].includes(format) && !episode.assets?.musicPath
         ? await this.ensureDefaultMusic()
         : episode.assets?.musicPath || null;
-      await this.assemble(inputs, finalPath, captionsPath, musicPath);
+      await this.assemble(
+        inputs,
+        finalPath,
+        captionsPath,
+        musicPath,
+        format === 'viral' ? { clipVolume: 0.5, musicVolume: 0.35 } : {}
+      );
 
       const stats = await fs.stat(finalPath);
       if (!stats.isFile() || stats.size <= 0) throw new Error('FFmpeg returned an empty ranked Short');
       const duration = await this.getDuration(finalPath);
 
-      const best = format === 'showcase' ? segments[0] : segments[segments.length - 1];
+      const best = format === 'ranked' ? segments[segments.length - 1] : segments[0];
       const thumbnailPath = path.join(episodeDir, 'thumbnail.jpg');
-      await this.renderThumbnail(best.segmentPath, thumbnailPath);
+      // The viral thumbnail comes from the finished video so the hook text is
+      // visible in the Shorts shelf image.
+      await this.renderThumbnail(format === 'viral' ? finalPath : best.segmentPath, thumbnailPath);
 
       const assets = {
         ...(episode.assets || {}),
@@ -615,7 +818,7 @@ class RankedShortsService {
         audio: {
           embedded: true,
           verifiedAt: new Date().toISOString(),
-          source: format === 'showcase' ? 'music_bed_and_clip_audio' : 'original_clip_audio',
+          source: format === 'ranked' ? 'original_clip_audio' : 'music_bed_and_clip_audio',
           streams: audioChecks
         },
         rights,
@@ -665,7 +868,7 @@ class RankedShortsService {
     }
   }
 
-  async renderSegment(clip, outputPath, fit) {
+  async renderSegment(clip, outputPath, fit, options = {}) {
     const args = ['-y', '-ss', String(clip.start), '-t', String(clip.seconds), '-i', clip.copiedPath];
     const filters = [];
     const maps = [];
@@ -676,6 +879,14 @@ class RankedShortsService {
         `crop=${this.width}:${this.height},boxblur=28:3[soft];` +
         `[fg]scale=${this.width}:${this.height}:force_original_aspect_ratio=decrease[front];` +
         `[soft][front]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p[v]`
+      );
+    } else if (options.motion === 'zoom') {
+      // A slow push-in makes the rapid cuts feel intentional instead of static.
+      filters.push(
+        `[0:v]scale=${this.width}:${this.height}:force_original_aspect_ratio=increase,` +
+        `crop=${this.width}:${this.height},setsar=1,fps=30,` +
+        `zoompan=z='min(zoom+0.0015,1.10)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +
+        `d=1:s=${this.width}x${this.height}:fps=30,format=yuv420p[v]`
       );
     } else {
       filters.push(
@@ -755,6 +966,66 @@ class RankedShortsService {
     ].join('\n');
   }
 
+  buildViralOverlay(episode, segments) {
+    const hookSeconds = clamp(episode.assets?.hookSeconds || VIRAL_HOOK_SECONDS, 1, 3);
+    const ctaText = episode.assets?.viral?.cta || 'Which one would you do first?';
+    const cues = [{
+      start: 0,
+      end: hookSeconds,
+      style: 'Hook',
+      text: wrapAssText(episode.hook || '', 20)
+    }];
+    let cursor = 0;
+    for (const segment of segments) {
+      // The hook shares the first clip, so the first reason begins when the
+      // hook clears instead of overlapping it.
+      const start = Math.max(cursor, hookSeconds);
+      const end = cursor + segment.duration;
+      if (segment.cta) {
+        cues.push({ start, end, style: 'Cta', text: wrapAssText(ctaText, 20) });
+      } else if (segment.reason) {
+        const previous = cues[cues.length - 1];
+        if (previous && previous.style === 'Reason' && previous.reason === segment.reason) {
+          previous.end = end;
+        } else {
+          cues.push({
+            start,
+            end,
+            style: 'Reason',
+            reason: segment.reason,
+            text: wrapAssText(`${segment.reason}. ${segment.caption || ''}`, 26)
+          });
+        }
+      }
+      cursor = end;
+    }
+
+    return [
+      '[Script Info]',
+      'ScriptType: v4.00+',
+      `PlayResX: ${this.width}`,
+      `PlayResY: ${this.height}`,
+      'WrapStyle: 0',
+      'ScaledBorderAndShadow: yes',
+      '',
+      '[V4+ Styles]',
+      'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+      `Style: Hook,${this.fontName},96,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,8,80,80,520,1`,
+      `Style: Reason,${this.fontName},60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,2,70,70,300,1`,
+      `Style: Cta,${this.fontName},76,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,5,80,80,0,1`,
+      '',
+      '[Events]',
+      'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+      ...cues
+        .filter(cue => cue.end > cue.start && cue.text)
+        .map(cue => {
+          const fade = cue.style === 'Hook' ? '{\\fad(0,120)}' : '{\\fad(80,80)}';
+          return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},${cue.style},,0,0,0,,${fade}${cue.text}`;
+        }),
+      ''
+    ].join('\n');
+  }
+
   async ensureDefaultMusic() {
     const dir = path.join(this.dataRoot, 'music');
     const target = path.join(dir, 'ambient-pad.m4a');
@@ -784,17 +1055,23 @@ class RankedShortsService {
     return target;
   }
 
-  async assemble(inputs, outputPath, captionsPath, musicPath = null) {
+  async assemble(inputs, outputPath, captionsPath, musicPath = null, options = {}) {
     const escaped = path.resolve(captionsPath)
       .replaceAll('\\', '/')
       .replace(':', '\\:')
       .replaceAll("'", "\\'");
-    // ASS files (showcase overlay) carry their own styles; force_style would
-    // override the top-center overlay with the countdown's bottom style.
+    // ASS files (showcase or viral overlays) carry their own styles;
+    // force_style would override them with the countdown's bottom style.
     const isAss = path.extname(captionsPath).toLowerCase() === '.ass';
     const subtitles = isAss
       ? `subtitles='${escaped}'`
       : `subtitles='${escaped}':force_style='${CAPTION_STYLE.replace('FontName=Arial', `FontName=${this.fontName}`)}'`;
+    const clipVolume = Number.isFinite(Number(options.clipVolume))
+      ? clamp(options.clipVolume, 0, 2)
+      : 1;
+    const musicVolume = Number.isFinite(Number(options.musicVolume))
+      ? clamp(options.musicVolume, 0, 2)
+      : 0.18;
     const args = ['-y'];
     inputs.forEach(input => args.push('-i', input));
     let resolvedMusic = null;
@@ -811,10 +1088,15 @@ class RankedShortsService {
     }
     const streams = inputs.map((_input, index) => `[${index}:v][${index}:a]`).join('');
     let filter = `${streams}concat=n=${inputs.length}:v=1:a=1[vc][ac];[vc]${subtitles}[v]`;
-    let audioMap = '[ac]';
+    let audioLabel = '[ac]';
+    if (clipVolume !== 1) {
+      filter += `;[ac]volume=${clipVolume}[acv]`;
+      audioLabel = '[acv]';
+    }
+    let audioMap = audioLabel;
     if (resolvedMusic) {
       const musicIndex = inputs.length;
-      filter += `;[${musicIndex}:a]volume=0.18[bg];[ac][bg]amix=inputs=2:duration=first:dropout_transition=0[a]`;
+      filter += `;[${musicIndex}:a]volume=${musicVolume}[bg];${audioLabel}[bg]amix=inputs=2:duration=first:dropout_transition=0[a]`;
       audioMap = '[a]';
     }
     await this.runFFmpeg([

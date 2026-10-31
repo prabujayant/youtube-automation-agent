@@ -62,7 +62,7 @@ function usage() {
     '',
     'Usage:',
     '  node scripts/ranked-shorts.js plan --dir <clips folder> --topic "<topic>" [options]',
-    '  node scripts/ranked-shorts.js stock --topic "<topic>" [--count 6] [--format showcase] (needs PEXELS_API_KEY or PIXABAY_API_KEY)',
+    '  node scripts/ranked-shorts.js stock --topic "<topic>" [--count 6] [--format viral|showcase] (needs PEXELS_API_KEY or PIXABAY_API_KEY)',
     '  node scripts/ranked-shorts.js render <episodeId>',
     '  node scripts/ranked-shorts.js approve <episodeId> --confirm [--at <ISO time>] [--privacy private|unlisted|public] [--now]',
     '  node scripts/ranked-shorts.js list',
@@ -73,10 +73,10 @@ function usage() {
     '  --license <type>      owned | licensed | cc-by | cc-by-sa | public-domain | permission',
     '  --source <note>       Where the licence comes from (required unless clips.json sets it)',
     '  --count <2-10>        Number of clips in the countdown (default: 7)',
-    '  --format <type>       ranked (countdown #N to #1) or showcase (travel destination highlights)',
+    '  --format <type>       ranked (countdown #N to #1), viral (3 reasons + CTA), or showcase (destination highlights)',
     '  --overlay "<text>"    Showcase overlay label (default: AI-generated, e.g. "♥ Venice")',
     '  --hook "<line>"       Override the opening hook',
-    '  --max-seconds <10-180> Hard cap for the Short (default: 60, showcase: 24)',
+    '  --max-seconds <10-180> Hard cap for the Short (default: 60, showcase/viral: 24)',
     '  --fit crop|blur       Full-bleed crop (default) or blurred letterbox',
     '  --render              Also render the episode right after planning',
     '  --music <file|auto>   Music bed: a local file, or "auto" for a royalty-free viral-style track (showcase defaults to auto)',
@@ -174,12 +174,15 @@ async function main() {
         ? String(flags.queries).split(',').map(query => query.trim()).filter(Boolean)
         : [];
       const showcase = flags.format === 'showcase';
-      const autoMusic = flags.music === undefined ? (showcase ? 'auto' : undefined) : resolveMusicFlag(flags.music);
+      const viral = flags.format === 'viral';
+      const autoMusic = flags.music === undefined
+        ? (showcase || viral ? 'auto' : undefined)
+        : resolveMusicFlag(flags.music);
       const clips = await stock.collectClips({
         topic: flags.topic,
-        count: numberFlag(flags.count) || (showcase ? 8 : undefined),
+        count: numberFlag(flags.count) || (showcase ? 8 : viral ? 7 : undefined),
         queries: queries.length ? queries : undefined,
-        maxSeconds: showcase ? 5 : undefined
+        maxSeconds: showcase || viral ? 5 : undefined
       });
       const episode = await service.plan({
         topic: flags.topic,
@@ -190,7 +193,7 @@ async function main() {
         clips,
         source: stock.provider,
         queries,
-        maxSeconds: numberFlag(flags['max-seconds']) || (showcase ? 24 : undefined),
+        maxSeconds: numberFlag(flags['max-seconds']) || (showcase || viral ? 24 : undefined),
         fit: flags.fit,
         music: autoMusic,
         musicPath: autoMusic === 'auto' ? undefined : autoMusic,

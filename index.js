@@ -756,11 +756,13 @@ class YouTubeAutomationAgent {
           });
         }
         const body = req.body || {};
+        const viral = body.format === 'viral';
+        const showcase = body.format === 'showcase';
         const clips = await stock.collectClips({
           topic: body.topic,
-          count: body.format === 'showcase' && !body.count ? 8 : body.count,
+          count: body.count || (showcase ? 8 : viral ? 7 : undefined),
           queries: Array.isArray(body.queries) ? body.queries : undefined,
-          maxSeconds: body.format === 'showcase' ? 5 : body.clipMaxSeconds
+          maxSeconds: showcase || viral ? 5 : body.clipMaxSeconds
         });
         const episode = await this.rankedShorts.plan({
           topic: body.topic,
@@ -771,9 +773,9 @@ class YouTubeAutomationAgent {
           clips,
           source: stock.provider,
           queries: Array.isArray(body.queries) ? body.queries : [],
-          maxSeconds: body.maxSeconds,
+          maxSeconds: body.maxSeconds || (viral ? 24 : undefined),
           fit: body.fit,
-          music: body.music,
+          music: body.music !== undefined ? body.music : viral ? 'auto' : undefined,
           musicMood: body.musicMood,
           musicPath: body.musicPath,
           privacyStatus: body.privacyStatus

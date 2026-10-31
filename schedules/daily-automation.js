@@ -717,6 +717,10 @@ class DailyAutomation {
       const privacy = ['private', 'unlisted', 'public'].includes(configuredPrivacy)
         ? configuredPrivacy
         : 'public';
+      const configuredFormat = (await this.db.getSetting('ranked_shorts_format')) || 'viral';
+      const format = ['showcase', 'viral', 'ranked'].includes(configuredFormat)
+        ? configuredFormat
+        : 'viral';
 
       const today = await this.todaysRankedShorts();
       if (today.length >= perDay) {
@@ -755,8 +759,8 @@ class DailyAutomation {
         const episode = await this.rankedShorts.plan({
           topic,
           clips,
-          count: clips.length,
-          format: 'showcase',
+          count: format === 'showcase' ? 8 : 7,
+          format,
           source: this.stockFootage.provider,
           music: 'auto',
           musicMood: slot % 2 ? 'viral-tropical' : 'viral-uplifting',

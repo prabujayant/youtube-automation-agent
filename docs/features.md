@@ -111,6 +111,20 @@ npm run shorts:ranked -- stock --topic "Venice Italy" --format showcase --render
 
 Showcase defaults: 8 clips of 3 seconds (24 seconds total), AI-written overlay/title/description/tags when a text provider is configured, and the thumbnail taken from the first clip. `--overlay "♥ Venice"` overrides the overlay text; colour flag emoji do not render in libass, so the heart is drawn as a red `♥` glyph instead.
 
+### Viral reasons format
+
+`--format viral` is the GitHub Actions default. It turns the same licensed clips into a saveable travel listicle:
+
+- a 1.4-second hook burned over the first clip (no black intro card),
+- three numbered reasons, each backed by two fast 2.8-second cuts,
+- a slow push-in on every clip so the rapid cuts feel intentional,
+- a comment-driving question over a final dedicated clip,
+- a 1.4-second hook, ~20-second runtime, and a loop that drops straight back into the hook.
+
+AI writes the hook, three reasons, CTA, title, description, and tags; without a text provider it falls back to three safe travel reasons ("The views stop you mid-step", "The food is a reason on its own", "The streets are made for wandering"). Overlay text is drawn from an ASS file with translucent boxes so it stays legible on any footage. The music bed uses the same royalty-free viral-style catalog, mixed louder under the clip audio. Emoji stay in the YouTube title and description because libass has no colour-emoji fallback.
+
+`SHORTS_FORMAT=viral|showcase|ranked` overrides the format in GitHub Actions. The local daily automation reads `ranked_shorts_format` (default `viral`).
+
 ### Music beds
 
 `--music auto` (the showcase default) picks a royalty-free viral-style track from the built-in Pixabay catalog — phonk, upbeat electronic, funk, and tropical-house instrumentals curated from tracks that were not Content ID registered when checked — rotates the choice per day and per slot, downloads it once into `data/footage/music/`, and credits the artist in the description automatically. Actual YouTube Shorts library songs cannot be attached through the YouTube Data API; embedding a licensed trending song in the MP4 would risk a Content ID claim, so the automated pipeline uses these equivalent viral-style beds instead. Drop your own `.mp3`/`.m4a`/`.wav`/`.ogg` files into `data/footage/music-library/` and the pipeline rotates through those instead (credited as "from the channel music library"). Without either, showcase episodes fall back to a locally synthesized ambient pad; ranked episodes keep the original clip audio only.
@@ -121,11 +135,12 @@ Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, 
 
 ### Running the daily Shorts in GitHub Actions
 
-`.github/workflows/shorts.yml` runs the same showcase pipeline in the cloud. Each run prepares the Short for the **next** slot and uploads it as a private video with YouTube's `publishAt` set to 01:30 or 13:30 UTC (07:00/19:00 IST), so the video goes public on time even when GitHub's scheduler runs late:
+`.github/workflows/shorts.yml` runs the same Shorts pipeline in the cloud. Each run prepares the Short for the **next** slot and uploads it as a private video with YouTube's `publishAt` set to 01:30 or 13:30 UTC (07:00/19:00 IST), so the video goes public on time even when GitHub's scheduler runs late:
 
 - Add `YOUTUBE_CREDENTIALS_JSON`, `YOUTUBE_TOKENS_JSON`, and `PIXABAY_API_KEY` as repository secrets (**Settings → Secrets and variables → Actions**). The workflow restores them into `config/credentials.json`, `config/tokens.json`, and `.env` on the runner; nothing secret is committed.
 - The workflow is free on a public repository. A private repository draws on the account's monthly Actions minutes — two runs a day is roughly 350–450 minutes a month.
-- Each run picks the destination for the target publish date from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the showcase with a rotating royalty-free viral-style music bed, approves the licence-tagged clips, and uploads scheduled. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
+- Each run picks the destination for the target publish date from the same 16-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the viral reasons Short with a rotating royalty-free viral-style music bed, approves the licence-tagged clips, and uploads scheduled. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
+- Each Short is conditioned to avoid duplicates: the job checks the channel's uploads (including private scheduled videos) for the same destination/date or publish time before rendering or uploading.
 - A second cron at 04:30/16:30 UTC retries the same slot if the first run failed. Before rendering, the workflow checks the channel, including private scheduled uploads, and skips when that slot already exists — retries never create duplicates.
 - Trigger a manual run from **Actions → Travel Short → Run workflow**. `publish_at` sets an exact UTC publish time (default: now), `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
 - GitHub's cron is best-effort and can start hours late. Because publishing uses YouTube's scheduled release, a late run only shortens the lead time; it does not move the publish time. If a run is delayed past the target, the Short is uploaded public immediately as a fallback.
