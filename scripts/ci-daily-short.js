@@ -40,11 +40,14 @@ function resolveTarget() {
   return { publishAt, targetDate };
 }
 
+function dayIndexFor(targetDate) {
+  const dayMs = Date.parse(`${targetDate}T00:00:00Z`);
+  return Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
+}
+
 function pickDestination(slot, targetDate) {
   if (process.env.SHORTS_TOPIC) return String(process.env.SHORTS_TOPIC).trim();
-  const dayMs = Date.parse(`${targetDate}T00:00:00Z`);
-  const dayIndex = Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
-  return DESTINATIONS[(dayIndex * 2 + slot) % DESTINATIONS.length];
+  return DESTINATIONS[(dayIndexFor(targetDate) * 2 + slot) % DESTINATIONS.length];
 }
 
 function normalize(value) {
@@ -141,6 +144,7 @@ async function findExistingTarget(youtube, topic, publishAt) {
       source: stock.provider,
       music: 'auto',
       musicMood: slot === 1 ? 'viral-tropical' : 'viral-uplifting',
+      musicDayIndex: dayIndexFor(targetDate) + slot,
       privacyStatus: 'public'
     });
     console.log(`Episode: ${episode.id}`);

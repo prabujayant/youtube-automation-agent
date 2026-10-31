@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Switched showcase music beds to a 12-track royalty-free viral-style Pixabay catalog (phonk, upbeat electronic, funk, and tropical house) curated from tracks that were not Content ID registered when checked; morning and evening Shorts rotate different tracks, and the artist is credited automatically
+- Switched showcase music beds to a 12-track royalty-free viral-style Pixabay catalog (phonk, upbeat electronic, funk, and tropical house) curated from tracks that were not Content ID registered when checked; the bed rotates by target publish date and slot so morning and evening Shorts use different tracks, and the artist is credited automatically
 - GitHub Actions now uploads each Short up to 12 hours early as a private video with YouTube `publishAt`, so the 07:00/19:00 IST slots publish on time even when GitHub's scheduler runs hours late; retry crons and a channel-based duplicate guard make reruns idempotent
 - Added `npm run youtube:reauth`, a two-step OAuth helper that mints a fresh refresh token without re-entering the client credentials, reports whether the 7-day testing expiry still applies, and prints the GitHub secret update command
 - Fixed YouTube descriptions losing their line breaks and showcase videos carrying an irrelevant `#ranking` tag; the metadata validator now preserves blank-line-separated sections

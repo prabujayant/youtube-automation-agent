@@ -155,7 +155,10 @@ class RankedShortsService {
     let musicCredit = null;
     if (input.music === 'auto' && this.musicBed) {
       try {
-        const resolved = await this.musicBed.resolve({ mood: input.musicMood });
+        const resolved = await this.musicBed.resolve({
+          mood: input.musicMood,
+          dayIndex: input.musicDayIndex
+        });
         if (resolved) {
           musicPath = resolved.path;
           musicCredit = this.musicBed.creditFor(resolved);
