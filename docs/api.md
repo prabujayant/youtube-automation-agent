@@ -185,7 +185,7 @@ curl -X POST http://localhost:3456/api/ranked-shorts \
 
 Every clip must include a supported `license` and a `source` note, or the request returns `RANKED_SHORTS_LICENSE_REQUIRED`. `approve` also requires `{"confirmed": true}`. Pass `musicPath` to loop a local music bed under the clips.
 
-`POST /api/ranked-shorts/stock` takes `topic`, optional `queries`, `count`, `maxSeconds`, `fit`, `format` (`ranked` countdown or `showcase` destination), `overlay`, `music` (`auto` picks the royalty-free viral-style Pixabay catalog), `musicMood`, `musicPath`, and `privacyStatus`; it needs `PIXABAY_API_KEY` or `PEXELS_API_KEY` in `.env`. Showcase defaults to 8 clips and `music: "auto"`.
+`POST /api/ranked-shorts/stock` takes `topic`, optional `queries`, `count`, `maxSeconds`, `fit`, `format` (`ranked` countdown, `showcase` destination, or `viral` reasons), `overlay`, `music` (`auto` picks the royalty-free viral-style Pixabay catalog), `musicMood`, `musicPremium` (default `true` for the viral format, `false` otherwise), `musicPath`, and `privacyStatus`; it needs `PIXABAY_API_KEY` or `PEXELS_API_KEY` in `.env`. Showcase defaults to 8 clips and `music: "auto"`; viral plans 7 clips, 3 reasons, and premium music.
 
 ### Operator, learning, and experiments
 

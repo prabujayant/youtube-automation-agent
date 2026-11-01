@@ -777,6 +777,7 @@ class YouTubeAutomationAgent {
           fit: body.fit,
           music: body.music !== undefined ? body.music : viral ? 'auto' : undefined,
           musicMood: body.musicMood,
+          musicPremium: viral ? body.musicPremium !== false : body.musicPremium === true,
           musicPath: body.musicPath,
           privacyStatus: body.privacyStatus
         });

@@ -149,6 +149,7 @@ async function findExistingTarget(youtube, topic, publishAt) {
       music: 'auto',
       musicMood: slot === 1 ? 'viral-tropical' : 'viral-uplifting',
       musicDayIndex: dayIndexFor(targetDate) + slot,
+      musicPremium: format === 'viral',
       privacyStatus: 'public'
     });
     console.log(`Episode: ${episode.id}`);

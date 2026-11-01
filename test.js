@@ -2001,12 +2001,46 @@ class SystemTest {
       if (license.license !== 'pixabay' || !license.licenseSource.includes('pixabay.com')) {
         throw new Error('Music service did not report the Pixabay license');
       }
-      if (MUSIC_CATALOG.length < 8) {
+      if (MUSIC_CATALOG.length < 19) {
         throw new Error('The built-in viral music catalog is too small to rotate');
       }
       if (!MUSIC_CATALOG.every(entry => entry.url?.startsWith('https://cdn.pixabay.com/')
-        && entry.artist && /^viral-(uplifting|tropical)$/.test(entry.mood))) {
+        && entry.page?.startsWith('https://pixabay.com/music/')
+        && entry.artist && /^viral-(uplifting|tropical)$/.test(entry.mood)
+        && entry.contentId === false)) {
         throw new Error('The built-in viral music catalog has incomplete metadata');
+      }
+      const premiumCount = MUSIC_CATALOG.filter(entry => entry.premium).length;
+      if (premiumCount < 10) {
+        throw new Error('The built-in viral music catalog has too few premium tracks');
+      }
+      const builtIn = new MusicBedService({
+        cacheRoot: path.join(directory, 'cache-built-in'),
+        fetch: fakeFetch
+      });
+      for (const mood of ['viral-uplifting', 'viral-tropical']) {
+        const picked = builtIn.pick(mood, { dayIndex: 0, premium: true });
+        if (!picked.premium || picked.mood !== mood) {
+          throw new Error(`Premium music pick ignored the ${mood} mood`);
+        }
+        const pool = MUSIC_CATALOG.filter(entry => entry.premium && entry.mood === mood);
+        for (let index = 0; index < pool.length; index++) {
+          if (!builtIn.pick(mood, { dayIndex: index, premium: true }).premium) {
+            throw new Error('Premium music rotation fell back to a non-premium track');
+          }
+        }
+      }
+      const premiumOnly = new MusicBedService({
+        cacheRoot: path.join(directory, 'cache-premium'),
+        fetch: fakeFetch,
+        catalog: [
+          { track: 'Standard Bed', artist: 'Test Artist', mood: 'uplifting' },
+          { track: 'Premium Bed', artist: 'Test Artist', mood: 'uplifting', premium: true }
+        ]
+      });
+      const premiumResolved = await premiumOnly.resolve({ mood: 'uplifting', dayIndex: 0, premium: true });
+      if (premiumResolved.entry.track !== 'Premium Bed') {
+        throw new Error('Premium music resolution ignored the premium pool');
       }
 
       const libraryDir = path.join(directory, 'library');

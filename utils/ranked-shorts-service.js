@@ -214,7 +214,8 @@ class RankedShortsService {
       try {
         const resolved = await this.musicBed.resolve({
           mood: input.musicMood,
-          dayIndex: input.musicDayIndex
+          dayIndex: input.musicDayIndex,
+          premium: input.musicPremium === true
         });
         if (resolved) {
           musicPath = resolved.path;
@@ -796,7 +797,7 @@ class RankedShortsService {
         finalPath,
         captionsPath,
         musicPath,
-        format === 'viral' ? { clipVolume: 0.5, musicVolume: 0.35 } : {}
+        format === 'viral' ? { clipVolume: 0.35, musicVolume: 0.5 } : {}
       );
 
       const stats = await fs.stat(finalPath);

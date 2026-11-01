@@ -80,6 +80,8 @@ function usage() {
     '  --fit crop|blur       Full-bleed crop (default) or blurred letterbox',
     '  --render              Also render the episode right after planning',
     '  --music <file|auto>   Music bed: a local file, or "auto" for a royalty-free viral-style track (showcase defaults to auto)',
+    '  --music-mood <name>   viral-uplifting or viral-tropical (default: derived from the slot)',
+    '  --music-premium <bool> Prefer the premium high-energy beds (default: true for viral, false otherwise)',
     '  --privacy <status>    Default privacy for the later schedule',
     '',
     'clips.json format:',
@@ -93,6 +95,14 @@ function resolveMusicFlag(flag) {
   if (flag === 'auto') return 'auto';
   if (flag === true) return undefined;
   return path.resolve(String(flag));
+}
+
+// The viral format defaults to the premium (highest-energy) half of the
+// catalog; `--music-premium false` opts back into the full rotation.
+function resolvePremiumFlag(flag, format) {
+  if (flag === undefined || flag === null) return format === 'viral';
+  if (flag === false || /^(false|no|0)$/i.test(String(flag))) return false;
+  return true;
 }
 
 async function main() {
@@ -150,6 +160,8 @@ async function main() {
         maxSeconds: numberFlag(flags['max-seconds']),
         fit: flags.fit,
         music: resolveMusicFlag(flags.music),
+        musicMood: flags['music-mood'],
+        musicPremium: resolvePremiumFlag(flags['music-premium'], flags.format),
         musicPath: resolveMusicFlag(flags.music) === 'auto' ? undefined : resolveMusicFlag(flags.music),
         privacyStatus: flags.privacy
       });
@@ -196,6 +208,8 @@ async function main() {
         maxSeconds: numberFlag(flags['max-seconds']) || (showcase || viral ? 24 : undefined),
         fit: flags.fit,
         music: autoMusic,
+        musicMood: flags['music-mood'],
+        musicPremium: resolvePremiumFlag(flags['music-premium'], flags.format),
         musicPath: autoMusic === 'auto' ? undefined : autoMusic,
         privacyStatus: flags.privacy
       });

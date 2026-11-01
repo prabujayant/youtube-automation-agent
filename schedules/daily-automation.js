@@ -765,6 +765,7 @@ class DailyAutomation {
           music: 'auto',
           musicMood: slot % 2 ? 'viral-tropical' : 'viral-uplifting',
           musicDayIndex: Math.floor(publishTime.getTime() / 86400000) + (slot % 2),
+          musicPremium: format === 'viral',
           privacyStatus: privacy
         });
         const rendered = await this.rankedShorts.render(episode.id);
