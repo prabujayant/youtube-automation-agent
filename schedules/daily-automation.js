@@ -818,7 +818,23 @@ class DailyAutomation {
       'Marrakech Morocco',
       'Prague Czech Republic',
       'Cappadocia Turkey',
-      'Queenstown New Zealand'
+      'Queenstown New Zealand',
+      'Tokyo Japan',
+      'Banff Canada',
+      'Hallstatt Austria',
+      'Chefchaouen Morocco',
+      'Cinque Terre Italy',
+      'Petra Jordan',
+      'Chiang Mai Thailand',
+      'Cape Town South Africa',
+      'Havana Cuba',
+      'Bora Bora French Polynesia',
+      'Neuschwanstein Germany',
+      'Plitvice Croatia',
+      'Giza Egypt',
+      'Rio de Janeiro Brazil',
+      'Sydney Australia',
+      'Vancouver Canada'
     ];
     const pool = configured.length ? configured : fallback;
     const dayIndex = Math.floor(Date.now() / 86400000);
