@@ -834,7 +834,22 @@ class DailyAutomation {
       'Giza Egypt',
       'Rio de Janeiro Brazil',
       'Sydney Australia',
-      'Vancouver Canada'
+      'Vancouver Canada',
+      'Bruges Belgium',
+      'Amsterdam Netherlands',
+      'Vienna Austria',
+      'Budapest Hungary',
+      'Krakow Poland',
+      'Dubrovnik Croatia',
+      'Kotor Montenegro',
+      'Lake Bled Slovenia',
+      'Tromso Norway',
+      'Faroe Islands',
+      'Azores Portugal',
+      'Seville Spain',
+      'Granada Spain',
+      'Valletta Malta',
+      'Ljubljana Slovenia'
     ];
     const pool = configured.length ? configured : fallback;
     const dayIndex = Math.floor(Date.now() / 86400000);
