@@ -38,6 +38,7 @@ class SystemTest {
       { name: 'Ranked Shorts Studio', test: () => this.testRankedShortsStudio() },
       { name: 'Showcase Format', test: () => this.testShowcaseFormat() },
       { name: 'Viral Reasons Format', test: () => this.testViralFormat() },
+      { name: 'Short Queue Filler', test: () => this.testQueueFiller() },
       { name: 'Music Bed Service', test: () => this.testMusicBedService() },
       { name: 'Stock Footage Service', test: () => this.testStockFootageService() },
       { name: 'Daily Ranked Shorts Automation', test: () => this.testDailyRankedShortsAutomation() },
@@ -2245,8 +2246,27 @@ class SystemTest {
     this.logger.info('Viral format test completed successfully');
   }
 
-  async testProvenanceDesk() {
-    const fs = require('fs').promises;
+  async testQueueFiller() {
+    const { nextSlotAfter, slotOf } = require('./scripts/ci-fill-queue');
+    const cases = [
+      ['2026-11-08T06:50:00Z', '2026-11-08T13:30:00.000Z', 1],
+      ['2026-11-08T13:30:00Z', '2026-11-09T01:30:00.000Z', 0],
+      ['2026-11-08T01:30:00Z', '2026-11-08T13:30:00.000Z', 1],
+      ['2026-11-09T02:00:00Z', '2026-11-09T13:30:00.000Z', 1]
+    ];
+    for (const [from, expected, slot] of cases) {
+      const next = nextSlotAfter(Date.parse(from));
+      if (next.toISOString() !== expected) {
+        throw new Error(`Next slot after ${from} is ${next.toISOString()}, expected ${expected}`);
+      }
+      if (slotOf(next) !== slot) {
+        throw new Error(`Slot index for ${next.toISOString()} is ${slotOf(next)}, expected ${slot}`);
+      }
+    }
+    this.logger.info('Short queue filler test completed successfully');
+  }
+
+  async testProvenanceDesk() {    const fs = require('fs').promises;
     const os = require('os');
     const { ProvenanceService } = require('./utils/provenance-service');
     const { OperatorService } = require('./utils/operator-service');

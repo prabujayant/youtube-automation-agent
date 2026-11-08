@@ -127,13 +127,17 @@ async function findExistingTarget(youtube, topic, publishAt) {
   return null;
 }
 
-(async () => {
-  const slot = Number(process.env.SHORTS_SLOT) === 1 ? 1 : 0;
-  const dryRun = String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true';
-  const requestedFormat = String(process.env.SHORTS_FORMAT || '').toLowerCase();
+async function runSlot(options = {}) {
+  const slot = Number(options.slot) === 1 ? 1 : 0;
+  const dryRun = options.dryRun === true;
+  const requestedFormat = String(options.format || '').toLowerCase();
   const format = ['showcase', 'viral', 'ranked'].includes(requestedFormat) ? requestedFormat : 'viral';
-  const { publishAt, targetDate } = resolveTarget();
-  const topic = pickDestination(slot, targetDate);
+  const publishAt = options.publishAt instanceof Date ? options.publishAt : new Date(options.publishAt);
+  if (Number.isNaN(publishAt.getTime())) {
+    throw new Error(`Invalid publish time: ${options.publishAt}`);
+  }
+  const targetDate = publishAt.toISOString().slice(0, 10);
+  const topic = options.topic ? String(options.topic).trim() : pickDestination(slot, targetDate);
   const scheduled = publishAt.getTime() > Date.now() + 60000;
   console.log(`Destination: ${topic} (slot ${slot}, ${format}${dryRun ? ', dry run' : ''})`);
   console.log(`Target publish: ${publishAt.toISOString()} (${scheduled ? 'scheduled' : 'immediate'})`);
@@ -157,7 +161,7 @@ async function findExistingTarget(youtube, topic, publishAt) {
       const videoId = existing.video.id;
       const state = existing.video.status?.publishAt ? 'scheduled' : 'published';
       console.log(`Already ${state}: https://www.youtube.com/watch?v=${videoId} (matched by ${existing.reason})`);
-      return;
+      return { status: 'skipped', videoId, topic, publishAt };
     }
 
     const logger = publishing.logger;
@@ -194,7 +198,7 @@ async function findExistingTarget(youtube, topic, publishAt) {
 
     if (dryRun) {
       console.log('Dry run - skipping approval and the YouTube upload');
-      return;
+      return { status: 'dry-run', episodeId: rendered.id, topic, publishAt };
     }
 
     await ranked.approve(rendered.id, {
@@ -202,15 +206,41 @@ async function findExistingTarget(youtube, topic, publishAt) {
       publishTime: publishAt.toISOString(),
       privacyStatus: 'public'
     });
-    const published = await ranked.publishNow(rendered.id);
+    let published;
+    try {
+      published = await ranked.publishNow(rendered.id);
+    } catch (error) {
+      if (/exceeded the number of videos/i.test(String(error.message))) {
+        error.code = 'UPLOAD_CAP';
+      }
+      throw error;
+    }
     const url = published.youtubeUrl || published.youtubeId || published.id;
     console.log(scheduled
       ? `Scheduled: ${url} (publishes ${publishAt.toISOString()})`
       : `Published: ${url}`);
+    return { status: scheduled ? 'scheduled' : 'published', videoId: published.youtubeId || published.id, url, topic, publishAt };
   } finally {
     await db.close().catch(() => {});
   }
-})().catch(error => {
-  console.error(`CI Short failed: ${error.message}`);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  (async () => {
+    const { publishAt } = resolveTarget();
+    const slot = Number(process.env.SHORTS_SLOT) === 1 ? 1 : 0;
+    await runSlot({
+      publishAt,
+      slot,
+      format: process.env.SHORTS_FORMAT,
+      dryRun: String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true',
+      topic: process.env.SHORTS_TOPIC
+    });
+  })().catch(error => {
+    console.error(`CI Short failed: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { runSlot, pickDestination, dayIndexFor, DESTINATIONS };
+
