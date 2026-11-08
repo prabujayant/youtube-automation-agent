@@ -2284,6 +2284,18 @@ class SystemTest {
       if (savedTopic === undefined) delete process.env.SHORTS_TOPIC;
       else process.env.SHORTS_TOPIC = savedTopic;
     }
+
+    // Every destination needs a deterministic flag, otherwise the title ships
+    // without one.
+    const { destinationFlag } = require('./utils/ranked-shorts-service');
+    if (DESTINATIONS.length !== new Set(DESTINATIONS).size) {
+      throw new Error('The destination rotation contains duplicates');
+    }
+    for (const topic of DESTINATIONS) {
+      if (!destinationFlag(topic)) {
+        throw new Error(`No flag mapped for destination: ${topic}`);
+      }
+    }
     this.logger.info('Short queue filler test completed successfully');
   }
 

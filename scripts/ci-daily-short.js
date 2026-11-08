@@ -6,57 +6,7 @@ const { PublishingSchedulingAgent } = require('../agents/publishing-scheduling-a
 const { StockFootageService } = require('../utils/stock-footage-service');
 const { RankedShortsService } = require('../utils/ranked-shorts-service');
 const { MusicBedService } = require('../utils/music-bed-service');
-
-// Keep in sync with the ranked_shorts_topics rotation in the local automation.
-const DESTINATIONS = [
-  'Venice Italy',
-  'Santorini Greece',
-  'Bali Indonesia',
-  'Kyoto Japan',
-  'Paris France',
-  'Swiss Alps Switzerland',
-  'Maldives',
-  'Dubai UAE',
-  'New York City',
-  'Amalfi Coast Italy',
-  'Lisbon Portugal',
-  'Reykjavik Iceland',
-  'Marrakech Morocco',
-  'Prague Czech Republic',
-  'Cappadocia Turkey',
-  'Queenstown New Zealand',
-  'Tokyo Japan',
-  'Banff Canada',
-  'Hallstatt Austria',
-  'Chefchaouen Morocco',
-  'Cinque Terre Italy',
-  'Petra Jordan',
-  'Chiang Mai Thailand',
-  'Cape Town South Africa',
-  'Havana Cuba',
-  'Bora Bora French Polynesia',
-  'Neuschwanstein Germany',
-  'Plitvice Croatia',
-  'Giza Egypt',
-  'Rio de Janeiro Brazil',
-  'Sydney Australia',
-  'Vancouver Canada',
-  'Bruges Belgium',
-  'Amsterdam Netherlands',
-  'Vienna Austria',
-  'Budapest Hungary',
-  'Krakow Poland',
-  'Dubrovnik Croatia',
-  'Kotor Montenegro',
-  'Lake Bled Slovenia',
-  'Tromso Norway',
-  'Faroe Islands',
-  'Azores Portugal',
-  'Seville Spain',
-  'Granada Spain',
-  'Valletta Malta',
-  'Ljubljana Slovenia'
-];
+const { DESTINATIONS } = require('../utils/destination-rotation');
 
 const VIRAL_COUNT = 7;
 
@@ -78,6 +28,11 @@ function dayIndexFor(targetDate) {
   return Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
 }
 
+// First slot that uses the current rotation: 2026-11-15 13:30 UTC (19:00 IST),
+// the next empty slot when the list was refreshed. Anchoring on a fixed slot
+// keeps the destination deterministic for a given publish time across reruns.
+const ROTATION_START_SLOT = dayIndexFor('2026-11-15') * 2 + 1;
+
 function topicOffset() {
   const value = Number(process.env.SHORTS_TOPIC_OFFSET);
   return Number.isFinite(value) ? Math.trunc(value) : 0;
@@ -85,7 +40,8 @@ function topicOffset() {
 
 function pickDestination(slot, targetDate) {
   if (process.env.SHORTS_TOPIC) return String(process.env.SHORTS_TOPIC).trim();
-  const index = dayIndexFor(targetDate) * 2 + slot + topicOffset();
+  const globalSlot = dayIndexFor(targetDate) * 2 + slot;
+  const index = globalSlot - ROTATION_START_SLOT + topicOffset();
   return DESTINATIONS[((index % DESTINATIONS.length) + DESTINATIONS.length) % DESTINATIONS.length];
 }
 

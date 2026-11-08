@@ -131,7 +131,14 @@ const DESTINATION_FLAGS = [
   ['Athens', '🇬🇷'], ['Indonesia', '🇮🇩'], ['Bali', '🇮🇩'], ['Japan', '🇯🇵'],
   ['Kyoto', '🇯🇵'], ['Tokyo', '🇯🇵'], ['France', '🇫🇷'], ['Paris', '🇫🇷'],
   ['Cuba', '🇨🇺'], ['Havana', '🇨🇺'], ['Jordan', '🇯🇴'], ['Petra', '🇯🇴'],
-  ['UAE', '🇦🇪'], ['Dubai', '🇦🇪'], ['New York', '🇺🇸'], ['USA', '🇺🇸']
+  ['UAE', '🇦🇪'], ['Dubai', '🇦🇪'], ['New York', '🇺🇸'], ['USA', '🇺🇸'],
+  ['Vietnam', '🇻🇳'], ['Hanoi', '🇻🇳'], ['India', '🇮🇳'], ['Delhi', '🇮🇳'],
+  ['South Korea', '🇰🇷'], ['Seoul', '🇰🇷'], ['Mexico', '🇲🇽'],
+  ['Cabo San Lucas', '🇲🇽'], ['Playa del Carmen', '🇲🇽'], ['Puerto Vallarta', '🇲🇽'],
+  ['Ethiopia', '🇪🇹'], ['Addis Ababa', '🇪🇹'], ['Kenya', '🇰🇪'], ['Nairobi', '🇰🇪'],
+  ['Malaysia', '🇲🇾'], ['Philippines', '🇵🇭'], ['Laos', '🇱🇦'],
+  ['Luang Prabang', '🇱🇦'], ['Colombia', '🇨🇴'], ['Cartagena', '🇨🇴'],
+  ['Greek', '🇬🇷'], ['California', '🇺🇸'], ['Miami', '🇺🇸'], ['Brooklyn', '🇺🇸']
 ];
 
 function destinationFlag(topic) {
@@ -1295,4 +1302,4 @@ class RankedShortsService {
   }
 }
 
-module.exports = { RankedShortsService, LICENSE_TYPES };
+module.exports = { RankedShortsService, LICENSE_TYPES, destinationFlag };

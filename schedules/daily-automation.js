@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { Logger } = require('../utils/logger');
+const { DESTINATIONS } = require('../utils/destination-rotation');
 
 class DailyAutomation {
   constructor(agents, database, options = {}) {
@@ -802,55 +803,7 @@ class DailyAutomation {
       .split(',')
       .map(topic => topic.trim())
       .filter(Boolean);
-    const fallback = [
-      'Venice Italy',
-      'Santorini Greece',
-      'Bali Indonesia',
-      'Kyoto Japan',
-      'Paris France',
-      'Swiss Alps Switzerland',
-      'Maldives',
-      'Dubai UAE',
-      'New York City',
-      'Amalfi Coast Italy',
-      'Lisbon Portugal',
-      'Reykjavik Iceland',
-      'Marrakech Morocco',
-      'Prague Czech Republic',
-      'Cappadocia Turkey',
-      'Queenstown New Zealand',
-      'Tokyo Japan',
-      'Banff Canada',
-      'Hallstatt Austria',
-      'Chefchaouen Morocco',
-      'Cinque Terre Italy',
-      'Petra Jordan',
-      'Chiang Mai Thailand',
-      'Cape Town South Africa',
-      'Havana Cuba',
-      'Bora Bora French Polynesia',
-      'Neuschwanstein Germany',
-      'Plitvice Croatia',
-      'Giza Egypt',
-      'Rio de Janeiro Brazil',
-      'Sydney Australia',
-      'Vancouver Canada',
-      'Bruges Belgium',
-      'Amsterdam Netherlands',
-      'Vienna Austria',
-      'Budapest Hungary',
-      'Krakow Poland',
-      'Dubrovnik Croatia',
-      'Kotor Montenegro',
-      'Lake Bled Slovenia',
-      'Tromso Norway',
-      'Faroe Islands',
-      'Azores Portugal',
-      'Seville Spain',
-      'Granada Spain',
-      'Valletta Malta',
-      'Ljubljana Slovenia'
-    ];
+    const fallback = DESTINATIONS;
     const pool = configured.length ? configured : fallback;
     const dayIndex = Math.floor(Date.now() / 86400000);
     const start = (dayIndex * perDay) % pool.length;
