@@ -32,24 +32,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  setup:
+    # Build the matrix here because a job-level `if` cannot read `matrix`.
+    # The second channel stays disabled until ZENTROX_ENABLED is set to true.
+    runs-on: ubuntu-latest
+    outputs:
+      channels: ${{ steps.channels.outputs.channels }}
+    steps:
+      - id: channels
+        env:
+          ZENTROX_ENABLED: ${{ vars.ZENTROX_ENABLED }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          channels='['
+          sep=''
+          if [ -z "$INPUT_CHANNEL" ] || [ "$INPUT_CHANNEL" = 'all' ] || [ "$INPUT_CHANNEL" = 'primary' ]; then
+            channels="$channels$sep{\"channel\":\"primary\",\"tokens\":\"config/tokens.json\",\"offset\":\"0\",\"default_count\":\"10\"}"
+            sep=','
+          fi
+          if [ "$ZENTROX_ENABLED" = 'true' ] && { [ -z "$INPUT_CHANNEL" ] || [ "$INPUT_CHANNEL" = 'all' ] || [ "$INPUT_CHANNEL" = 'zentrox' ]; }; then
+            channels="$channels$sep{\"channel\":\"zentrox\",\"tokens\":\"config/tokens.zentrox.json\",\"offset\":\"5\",\"default_count\":\"4\"}"
+            sep=','
+          fi
+          channels="$channels]"
+          echo "channels=$channels" >> "$GITHUB_OUTPUT"
+
   fill:
-    # The second channel stays disabled until its token secret exists and the
-    # ZENTROX_ENABLED repository variable is set to true.
-    if: |
-      (matrix.channel == 'primary' || vars.ZENTROX_ENABLED == 'true') &&
-      (!inputs.channel || inputs.channel == 'all' || inputs.channel == matrix.channel)
+    needs: setup
+    if: needs.setup.outputs.channels != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - channel: primary
-            tokens: config/tokens.json
-            offset: '0'
-            default_count: '10'
-          - channel: zentrox
-            tokens: config/tokens.zentrox.json
-            offset: '5'
-            default_count: '4'
+        include: ${{ fromJson(needs.setup.outputs.channels) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

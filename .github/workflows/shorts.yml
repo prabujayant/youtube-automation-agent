@@ -37,20 +37,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  setup:
+    # Build the matrix here because a job-level `if` cannot read `matrix`.
+    # The second channel stays disabled until ZENTROX_ENABLED is set to true.
+    runs-on: ubuntu-latest
+    outputs:
+      channels: ${{ steps.channels.outputs.channels }}
+    steps:
+      - id: channels
+        env:
+          ZENTROX_ENABLED: ${{ vars.ZENTROX_ENABLED }}
+        run: |
+          if [ "$ZENTROX_ENABLED" = "true" ]; then
+            echo 'channels=[{"channel":"primary","tokens":"config/tokens.json","offset":"0"},{"channel":"zentrox","tokens":"config/tokens.zentrox.json","offset":"5"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'channels=[{"channel":"primary","tokens":"config/tokens.json","offset":"0"}]' >> "$GITHUB_OUTPUT"
+          fi
+
   short:
-    # The second channel stays disabled until its token secret exists and the
-    # ZENTROX_ENABLED repository variable is set to true.
-    if: matrix.channel == 'primary' || vars.ZENTROX_ENABLED == 'true'
+    needs: setup
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - channel: primary
-            tokens: config/tokens.json
-            offset: '0'
-          - channel: zentrox
-            tokens: config/tokens.zentrox.json
-            offset: '5'
+        include: ${{ fromJson(needs.setup.outputs.channels) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
