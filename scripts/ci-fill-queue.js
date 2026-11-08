@@ -63,6 +63,7 @@ async function main() {
 
   let filled = 0;
   let skipped = 0;
+  let dryRuns = 0;
   for (let index = 0; index < count; index++) {
     const publishAt = nextSlotAfter(cursor);
     if (publishAt.getTime() > horizonMs) {
@@ -74,6 +75,8 @@ async function main() {
       const result = await runSlot({ publishAt, slot, format, dryRun });
       if (result.status === 'skipped') {
         skipped++;
+      } else if (result.status === 'dry-run') {
+        dryRuns++;
       } else {
         filled++;
       }
@@ -87,7 +90,7 @@ async function main() {
     }
     cursor = publishAt.getTime();
   }
-  console.log(`Fill complete: ${filled} scheduled, ${skipped} already present`);
+  console.log(`Fill complete: ${filled} scheduled, ${dryRuns} dry-run, ${skipped} already present`);
 }
 
 if (require.main === module) {
