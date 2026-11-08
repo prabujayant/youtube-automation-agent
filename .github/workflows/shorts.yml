@@ -38,6 +38,19 @@ concurrency:
 
 jobs:
   short:
+    # The second channel stays disabled until its token secret exists and the
+    # ZENTROX_ENABLED repository variable is set to true.
+    if: matrix.channel == 'primary' || vars.ZENTROX_ENABLED == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - channel: primary
+            tokens: config/tokens.json
+            offset: '0'
+          - channel: zentrox
+            tokens: config/tokens.zentrox.json
+            offset: '5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -55,11 +68,15 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
           YOUTUBE_TOKENS_JSON: ${{ secrets.YOUTUBE_TOKENS_JSON }}
+          YOUTUBE_TOKENS_ZENTROX_JSON: ${{ secrets.YOUTUBE_TOKENS_ZENTROX_JSON }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           mkdir -p config data
           printf '%s' "$YOUTUBE_CREDENTIALS_JSON" > config/credentials.json
           printf '%s' "$YOUTUBE_TOKENS_JSON" > config/tokens.json
+          if [ -n "${YOUTUBE_TOKENS_ZENTROX_JSON:-}" ]; then
+            printf '%s' "$YOUTUBE_TOKENS_ZENTROX_JSON" > config/tokens.zentrox.json
+          fi
           {
             echo "NODE_ENV=production"
             echo "PIXABAY_API_KEY=$PIXABAY_API_KEY"
@@ -118,20 +135,22 @@ jobs:
             echo "SHORTS_TARGET_DATE=$target_date"
             echo "SHORTS_PUBLISH_AT=$publish_at"
           } >> "$GITHUB_ENV"
-          echo "Target: slot $slot, date $target_date, publish at $publish_at"
+          echo "Target: ${{ matrix.channel }} slot $slot, date $target_date, publish at $publish_at"
 
       - name: Build and upload the Short
         env:
           SHORTS_TOPIC: ${{ inputs.topic }}
           SHORTS_FORMAT: ${{ inputs.format }}
           SHORTS_DRY_RUN: ${{ inputs.dry_run }}
+          SHORTS_TOPIC_OFFSET: ${{ matrix.offset }}
+          YOUTUBE_TOKENS_PATH: ${{ matrix.tokens }}
         run: node scripts/ci-daily-short.js
 
       - name: Keep the rendered Short
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: short-${{ github.run_id }}
+          name: short-${{ matrix.channel }}-${{ github.run_id }}
           path: |
             data/ranked-shorts/**/final.mp4
             data/ranked-shorts/**/thumbnail.jpg

@@ -78,9 +78,15 @@ function dayIndexFor(targetDate) {
   return Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
 }
 
+function topicOffset() {
+  const value = Number(process.env.SHORTS_TOPIC_OFFSET);
+  return Number.isFinite(value) ? Math.trunc(value) : 0;
+}
+
 function pickDestination(slot, targetDate) {
   if (process.env.SHORTS_TOPIC) return String(process.env.SHORTS_TOPIC).trim();
-  return DESTINATIONS[(dayIndexFor(targetDate) * 2 + slot) % DESTINATIONS.length];
+  const index = dayIndexFor(targetDate) * 2 + slot + topicOffset();
+  return DESTINATIONS[((index % DESTINATIONS.length) + DESTINATIONS.length) % DESTINATIONS.length];
 }
 
 function normalize(value) {
@@ -183,7 +189,9 @@ async function runSlot(options = {}) {
       source: stock.provider,
       music: 'auto',
       musicMood: slot === 1 ? 'viral-tropical' : 'viral-uplifting',
-      musicDayIndex: dayIndexFor(targetDate) + slot,
+      // Offset too, so the two channels never publish the same track in the
+      // same slot.
+      musicDayIndex: dayIndexFor(targetDate) + slot + topicOffset(),
       musicPremium: format === 'viral',
       privacyStatus: 'public'
     });

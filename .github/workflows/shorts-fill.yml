@@ -2,14 +2,23 @@ name: Fill Short Schedule
 
 on:
   schedule:
-    # Right after YouTube's upload counter resets at midnight Pacific (08:00 UTC).
-    - cron: '5 8 * * *'
+    # YouTube's upload counter is not reliably tied to a single UTC hour: a run
+    # that finds the cap already spent simply exits, so retry every four hours
+    # and the first run after the reset fills the day's slots.
+    - cron: '5 0,4,8,12,16,20 * * *'
   workflow_dispatch:
     inputs:
+      channel:
+        description: 'Channel to fill'
+        type: choice
+        options:
+          - all
+          - primary
+          - zentrox
+        default: all
       count:
-        description: 'Slots to add (default 10)'
+        description: 'Slots per channel (default: 10 primary / 4 zentrox)'
         required: false
-        default: '10'
       dry_run:
         description: Render the Shorts but skip the YouTube upload
         type: boolean
@@ -24,6 +33,23 @@ concurrency:
 
 jobs:
   fill:
+    # The second channel stays disabled until its token secret exists and the
+    # ZENTROX_ENABLED repository variable is set to true.
+    if: |
+      (matrix.channel == 'primary' || vars.ZENTROX_ENABLED == 'true') &&
+      (!inputs.channel || inputs.channel == 'all' || inputs.channel == matrix.channel)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - channel: primary
+            tokens: config/tokens.json
+            offset: '0'
+            default_count: '10'
+          - channel: zentrox
+            tokens: config/tokens.zentrox.json
+            offset: '5'
+            default_count: '4'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -41,11 +67,15 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS_JSON: ${{ secrets.YOUTUBE_CREDENTIALS_JSON }}
           YOUTUBE_TOKENS_JSON: ${{ secrets.YOUTUBE_TOKENS_JSON }}
+          YOUTUBE_TOKENS_ZENTROX_JSON: ${{ secrets.YOUTUBE_TOKENS_ZENTROX_JSON }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           mkdir -p config data
           printf '%s' "$YOUTUBE_CREDENTIALS_JSON" > config/credentials.json
           printf '%s' "$YOUTUBE_TOKENS_JSON" > config/tokens.json
+          if [ -n "${YOUTUBE_TOKENS_ZENTROX_JSON:-}" ]; then
+            printf '%s' "$YOUTUBE_TOKENS_ZENTROX_JSON" > config/tokens.zentrox.json
+          fi
           {
             echo "NODE_ENV=production"
             echo "PIXABAY_API_KEY=$PIXABAY_API_KEY"
@@ -54,16 +84,18 @@ jobs:
 
       - name: Fill the publish slots
         env:
-          SHORTS_FILL_COUNT: ${{ inputs.count || '10' }}
+          SHORTS_FILL_COUNT: ${{ inputs.count || matrix.default_count }}
           SHORTS_DRY_RUN: ${{ inputs.dry_run }}
           SHORTS_FORMAT: viral
+          SHORTS_TOPIC_OFFSET: ${{ matrix.offset }}
+          YOUTUBE_TOKENS_PATH: ${{ matrix.tokens }}
         run: node scripts/ci-fill-queue.js
 
       - name: Keep the rendered Shorts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shorts-fill-${{ github.run_id }}
+          name: shorts-fill-${{ matrix.channel }}-${{ github.run_id }}
           path: |
             data/ranked-shorts/**/final.mp4
             data/ranked-shorts/**/thumbnail.jpg

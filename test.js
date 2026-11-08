@@ -2263,10 +2263,32 @@ class SystemTest {
         throw new Error(`Slot index for ${next.toISOString()} is ${slotOf(next)}, expected ${slot}`);
       }
     }
+
+    // The second channel shifts the rotation so both channels never publish
+    // the same destination in the same slot.
+    const { pickDestination, DESTINATIONS } = require('./scripts/ci-daily-short');
+    const savedOffset = process.env.SHORTS_TOPIC_OFFSET;
+    const savedTopic = process.env.SHORTS_TOPIC;
+    delete process.env.SHORTS_TOPIC;
+    try {
+      process.env.SHORTS_TOPIC_OFFSET = '0';
+      const base = DESTINATIONS.indexOf(pickDestination(0, '2026-11-08'));
+      process.env.SHORTS_TOPIC_OFFSET = '5';
+      const shifted = DESTINATIONS.indexOf(pickDestination(0, '2026-11-08'));
+      if (base < 0 || shifted !== (base + 5) % DESTINATIONS.length) {
+        throw new Error(`Topic offset did not shift the rotation: ${base} -> ${shifted}`);
+      }
+    } finally {
+      if (savedOffset === undefined) delete process.env.SHORTS_TOPIC_OFFSET;
+      else process.env.SHORTS_TOPIC_OFFSET = savedOffset;
+      if (savedTopic === undefined) delete process.env.SHORTS_TOPIC;
+      else process.env.SHORTS_TOPIC = savedTopic;
+    }
     this.logger.info('Short queue filler test completed successfully');
   }
 
-  async testProvenanceDesk() {    const fs = require('fs').promises;
+  async testProvenanceDesk() {
+    const fs = require('fs').promises;
     const os = require('os');
     const { ProvenanceService } = require('./utils/provenance-service');
     const { OperatorService } = require('./utils/operator-service');

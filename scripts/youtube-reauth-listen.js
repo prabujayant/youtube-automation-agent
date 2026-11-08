@@ -12,7 +12,9 @@ const SCOPES = [
 ];
 
 (async () => {
-  const credentials = new CredentialManager();
+  const tokensFlag = process.argv.indexOf('--tokens');
+  const tokensPath = tokensFlag >= 0 ? process.argv[tokensFlag + 1] : '';
+  const credentials = new CredentialManager(tokensPath ? { tokensPath } : {});
   await credentials.initialize();
   const youtube = credentials.credentials?.youtube;
   if (!youtube?.client_id || !youtube?.client_secret || !youtube?.redirect_uris?.[0]) {
@@ -30,8 +32,7 @@ const SCOPES = [
     scope: SCOPES
   });
 
-  const server = http.createServer(async (req, res) => {
-    const requestUrl = new URL(req.url, 'http://127.0.0.1');
+  const server = http.createServer(async (req, res) => {    const requestUrl = new URL(req.url, 'http://127.0.0.1');
     const error = requestUrl.searchParams.get('error');
     const code = requestUrl.searchParams.get('code');
     if (!code && !error) {
@@ -51,6 +52,7 @@ const SCOPES = [
         ? `${Math.round(Number(tokens.refresh_token_expires_in) / 86400)} days (still in Testing mode)`
         : 'no 7-day expiry (production token)';
       console.log(`SUCCESS|${expiry}`);
+      console.log(`SAVED|${credentials.tokensPath}`);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><title>Authorized</title><h1>Authorization complete</h1><p>${expiry}</p><p>You can close this tab.</p>`);
       setTimeout(() => process.exit(0), 1200);
@@ -64,6 +66,7 @@ const SCOPES = [
 
   server.listen(80, '127.0.0.1', () => {
     console.log(`AUTH_URL|${authUrl}`);
+    console.log(`TOKENS|${credentials.tokensPath}`);
     console.log('LISTENING|http://127.0.0.1');
   });
   server.on('error', error => {

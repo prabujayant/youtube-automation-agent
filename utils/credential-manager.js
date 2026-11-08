@@ -14,10 +14,14 @@ async function writePrivateFile(filePath, contents) {
 }
 
 class CredentialManager {
-  constructor() {
+  constructor(options = {}) {
     this.logger = new Logger('CredentialManager');
-    this.credentialsPath = path.join(__dirname, '..', 'config', 'credentials.json');
-    this.tokensPath = path.join(__dirname, '..', 'config', 'tokens.json');
+    this.credentialsPath = options.credentialsPath
+      || process.env.YOUTUBE_CREDENTIALS_PATH
+      || path.join(__dirname, '..', 'config', 'credentials.json');
+    this.tokensPath = options.tokensPath
+      || process.env.YOUTUBE_TOKENS_PATH
+      || path.join(__dirname, '..', 'config', 'tokens.json');
     this.credentials = {};
     this.tokens = {};
   }

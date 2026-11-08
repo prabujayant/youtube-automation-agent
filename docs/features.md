@@ -138,12 +138,14 @@ Set `ranked_shorts_automation` to `true` (the **Channel setup** dashboard form, 
 `.github/workflows/shorts.yml` runs the same Shorts pipeline in the cloud. Each run prepares the Short for the **next** slot and uploads it as a private video with YouTube's `publishAt` set to 01:30 or 13:30 UTC (07:00/19:00 IST), so the video goes public on time even when GitHub's scheduler runs late:
 
 - Add `YOUTUBE_CREDENTIALS_JSON`, `YOUTUBE_TOKENS_JSON`, and `PIXABAY_API_KEY` as repository secrets (**Settings → Secrets and variables → Actions**). The workflow restores them into `config/credentials.json`, `config/tokens.json`, and `.env` on the runner; nothing secret is committed.
+- The workflows run a **primary/zentrox matrix**: `YOUTUBE_TOKENS_PATH` points each job at its own token file (`config/tokens.json` or `config/tokens.zentrox.json`) and `SHORTS_TOPIC_OFFSET` shifts the destination rotation so the two channels never publish the same place or music track in the same slot. The second channel is off until its token secret and the `ZENTROX_ENABLED` repository variable exist (see *Second channel* below).
 - The workflow is free on a public repository. A private repository draws on the account's monthly Actions minutes — two runs a day is roughly 350–450 minutes a month.
 - Each run picks the destination for the target publish date from the same 47-place rotation (`dayIndex * 2 + slot`), collects eight licensed clips, renders the viral reasons Short with a rotating premium high-energy royalty-free music bed, approves the licence-tagged clips, and uploads scheduled. The rendered MP4 and thumbnail are kept as a workflow artifact for 14 days.
 - Each Short is conditioned to avoid duplicates: the job checks the channel's uploads (including private scheduled videos) for the same destination/date or publish time before rendering or uploading.
 - A second cron at 04:30/16:30 UTC retries the same slot if the first run failed. Before rendering, the workflow checks the channel, including private scheduled uploads, and skips when that slot already exists — retries never create duplicates.
 - Trigger a manual run from **Actions → Travel Short → Run workflow**. `publish_at` sets an exact UTC publish time (default: now), `dry_run` renders without uploading, `topic` overrides the destination, and `slot` chooses the rotation half and music mood.
-- **Actions → Fill Short Schedule** tops the queue up to YouTube's daily upload cap: it runs at 08:05 UTC (right after the midnight-Pacific counter reset) or on demand, finds the last scheduled slot on the channel, then renders and schedules the next empty 01:30/13:30 UTC slots one by one until the cap error or the requested count. It stops cleanly on `The user has exceeded the number of videos they may upload`, so a run never leaves a half-scheduled slot.
+- **Actions → Fill Short Schedule** tops the queue up to YouTube's daily upload cap: it runs every four hours (00:05, 04:05, 08:05, 12:05, 16:05, 20:05 UTC) or on demand, finds the last scheduled slot on the channel, then renders and schedules the next empty 01:30/13:30 UTC slots one by one until the cap error or the requested count. A run that finds the counter already spent exits immediately, so the first run after the reset fills the day's slots. It stops cleanly on `The user has exceeded the number of videos they may upload`, so a run never leaves a half-scheduled slot. It fills 10 slots for the primary channel and 4 for the newer Zentrox channel by default; the `channel` and `count` inputs override both.
+- **Second channel (Zentrox Clips, `@zentroxclips-h7y`).** The Online Agent can publish to a second brand channel on the same Google account. Authorize it once with its own token file, store the token as `YOUTUBE_TOKENS_ZENTROX_JSON`, and set the `ZENTROX_ENABLED` repository variable to `true`. The channel stays entirely disabled until both exist, so the primary workflow cannot fail on a missing secret. `SHORTS_TOPIC_OFFSET=5` gives it a different destination rotation, and the music index is offset as well, so the two channels do not duplicate each other.
 - GitHub's cron is best-effort and can start hours late. Because publishing uses YouTube's scheduled release, a late run only shortens the lead time; it does not move the publish time. If a run is delayed past the target, the Short is uploaded public immediately as a fallback.
 - Scheduled workflows use UTC. GitHub pauses schedules after 60 days without repository activity; re-enable the workflow from the Actions tab if that happens.
 - Google OAuth refresh tokens issued while the consent screen is in **Testing** expire after 7 days. To fix it permanently, open **Google Auth Platform → Audience** for the project that owns this OAuth client, click **Publish app** (staying unverified is fine for personal use), then mint a production token with `npm run youtube:reauth` and update the `YOUTUBE_TOKENS_JSON` secret. Existing testing tokens keep their 7-day expiry, so re-authorizing once after publishing is required.
@@ -159,6 +161,17 @@ npm run youtube:reauth
 # open the printed URL, approve access, then run the command with the code:
 npm run youtube:reauth -- --code "<code-or-full-redirect-url>"
 Get-Content config\tokens.json -Raw | gh secret set YOUTUBE_TOKENS_JSON -R prabujayant/youtube-automation-agent
+```
+
+To authorize the second channel instead, pass its token file. On the Google consent screen pick the **Zentrox Clips** brand account:
+
+```bash
+npm run youtube:reauth:listen -- --tokens config/tokens.zentrox.json
+# or, without the local listener:
+npm run youtube:reauth -- --tokens config/tokens.zentrox.json
+npm run youtube:reauth -- --tokens config/tokens.zentrox.json --code "<code-or-full-redirect-url>"
+Get-Content config\tokens.zentrox.json -Raw | gh secret set YOUTUBE_TOKENS_ZENTROX_JSON -R prabujayant/youtube-automation-agent
+gh variable set ZENTROX_ENABLED --body true -R prabujayant/youtube-automation-agent
 ```
 
 The helper reports `no 7-day expiry (production token)` when the OAuth app is in production. While the app is still in **Testing**, the new token also expires after seven days; publish the app first (Google Auth Platform → Audience → **Publish app**) and re-authorize once more.
