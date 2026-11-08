@@ -103,8 +103,57 @@ function overlayText(value, maximum = 120) {
     .slice(0, maximum);
 }
 
-function assSafe(value) {
-  return String(value || '')
+// Country and city keywords for the destinations this channel rotates through.
+// The AI is asked for one flag emoji, but free models often omit it or pick the
+// wrong one (Croatia rendered as Costa Rica), so the flag is set deterministically.
+const DESTINATION_FLAGS = [
+  ['Tromso', '🇳🇴'], ['Tromsø', '🇳🇴'], ['Faroe Islands', '🇫🇴'],
+  ['French Polynesia', '🇵🇫'], ['Bora Bora', '🇵🇫'], ['New Zealand', '🇳🇿'],
+  ['Queenstown', '🇳🇿'], ['South Africa', '🇿🇦'], ['Cape Town', '🇿🇦'],
+  ['Switzerland', '🇨🇭'], ['Swiss Alps', '🇨🇭'], ['Netherlands', '🇳🇱'],
+  ['Amsterdam', '🇳🇱'], ['Montenegro', '🇲🇪'], ['Kotor', '🇲🇪'],
+  ['Czech Republic', '🇨🇿'], ['Prague', '🇨🇿'], ['Maldives', '🇲🇻'],
+  ['Iceland', '🇮🇸'], ['Reykjavik', '🇮🇸'], ['Portugal', '🇵🇹'],
+  ['Lisbon', '🇵🇹'], ['Azores', '🇵🇹'], ['Morocco', '🇲🇦'],
+  ['Marrakech', '🇲🇦'], ['Chefchaouen', '🇲🇦'], ['Turkey', '🇹🇷'],
+  ['Cappadocia', '🇹🇷'], ['Thailand', '🇹🇭'], ['Chiang Mai', '🇹🇭'],
+  ['Germany', '🇩🇪'], ['Neuschwanstein', '🇩🇪'], ['Croatia', '🇭🇷'],
+  ['Dubrovnik', '🇭🇷'], ['Plitvice', '🇭🇷'], ['Egypt', '🇪🇬'], ['Giza', '🇪🇬'],
+  ['Brazil', '🇧🇷'], ['Rio de Janeiro', '🇧🇷'], ['Australia', '🇦🇺'],
+  ['Sydney', '🇦🇺'], ['Canada', '🇨🇦'], ['Vancouver', '🇨🇦'], ['Banff', '🇨🇦'],
+  ['Belgium', '🇧🇪'], ['Bruges', '🇧🇪'], ['Austria', '🇦🇹'], ['Vienna', '🇦🇹'],
+  ['Hallstatt', '🇦🇹'], ['Hungary', '🇭🇺'], ['Budapest', '🇭🇺'],
+  ['Poland', '🇵🇱'], ['Krakow', '🇵🇱'], ['Slovenia', '🇸🇮'],
+  ['Lake Bled', '🇸🇮'], ['Ljubljana', '🇸🇮'], ['Norway', '🇳🇴'],
+  ['Spain', '🇪🇸'], ['Seville', '🇪🇸'], ['Granada', '🇪🇸'], ['Malta', '🇲🇹'],
+  ['Valletta', '🇲🇹'], ['Italy', '🇮🇹'], ['Venice', '🇮🇹'], ['Amalfi', '🇮🇹'],
+  ['Cinque Terre', '🇮🇹'], ['Greece', '🇬🇷'], ['Santorini', '🇬🇷'],
+  ['Athens', '🇬🇷'], ['Indonesia', '🇮🇩'], ['Bali', '🇮🇩'], ['Japan', '🇯🇵'],
+  ['Kyoto', '🇯🇵'], ['Tokyo', '🇯🇵'], ['France', '🇫🇷'], ['Paris', '🇫🇷'],
+  ['Cuba', '🇨🇺'], ['Havana', '🇨🇺'], ['Jordan', '🇯🇴'], ['Petra', '🇯🇴'],
+  ['UAE', '🇦🇪'], ['Dubai', '🇦🇪'], ['New York', '🇺🇸'], ['USA', '🇺🇸']
+];
+
+function destinationFlag(topic) {
+  const haystack = String(topic || '').toLowerCase();
+  for (const [keyword, flag] of DESTINATION_FLAGS) {
+    if (haystack.includes(keyword.toLowerCase())) return flag;
+  }
+  return null;
+}
+
+// Guarantees exactly one, correct flag at the end of a viral title.
+function withDestinationFlag(title, topic) {
+  const flag = destinationFlag(topic);
+  if (!flag) return title;
+  const stripped = String(title || '')
+    .replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return truncate(`${stripped} ${flag}`, 100);
+}
+
+function assSafe(value) {  return String(value || '')
     .replace(/\\/g, '\\\\')
     .replace(/[{}]/g, '')
     .replace(/\r?\n/g, ' ');
@@ -557,7 +606,7 @@ class RankedShortsService {
       hook: truncate(hookOverride || `${reasonCount} reasons to visit ${shortName}`, 45),
       reasons: VIRAL_FALLBACK_REASONS.slice(0, reasonCount),
       cta: 'Which one would you do first?',
-      title: truncate(`${reasonCount} Reasons to Visit ${topic}`, 90),
+      title: withDestinationFlag(`${reasonCount} Reasons to Visit ${topic}`, topic),
       description: `Here are ${reasonCount} reasons ${shortName} belongs on your next trip.`,
       tags: ['travel', 'traveltok', 'shorts', 'bucketlist',
         ...topic.split(/[^a-z0-9]+/i).filter(word => word.length > 3).slice(0, 4)]
@@ -592,9 +641,10 @@ class RankedShortsService {
         reasons.push(VIRAL_FALLBACK_REASONS[reasons.length % VIRAL_FALLBACK_REASONS.length]);
       }
       const parsedTitle = truncate(parsed.title || '', 90);
-      const title = /reason/i.test(parsedTitle) && parsedTitle.length >= 10
-        ? parsedTitle
-        : fallback.title;
+      const title = withDestinationFlag(
+        /reason/i.test(parsedTitle) && parsedTitle.length >= 10 ? parsedTitle : fallback.title,
+        topic
+      );
       return {
         hook: truncate(overlayText(hookOverride || parsed.hook || fallback.hook, 45), 45),
         reasons,

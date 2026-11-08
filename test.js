@@ -2195,6 +2195,9 @@ class SystemTest {
       if (!/3 Reasons/i.test(planned.title)) {
         throw new Error('Viral title does not lead with the three-reason promise');
       }
+      if (!planned.title.endsWith('🇮🇸')) {
+        throw new Error('Viral title is missing the destination flag');
+      }
       if (!/Which one would you do first/i.test(planned.description)) {
         throw new Error('Viral description lost its comment-driving question');
       }
