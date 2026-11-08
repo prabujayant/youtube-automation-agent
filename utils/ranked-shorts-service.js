@@ -147,7 +147,11 @@ function withDestinationFlag(title, topic) {
   const flag = destinationFlag(topic);
   if (!flag) return title;
   const stripped = String(title || '')
-    .replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, '')
+    // Remove any emoji the text model added (flags, globe, sparkles) before
+    // appending the one deterministic flag.
+    .replace(/[\u{1F000}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/\uFE0F|\u200D/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
   return truncate(`${stripped} ${flag}`, 100);
