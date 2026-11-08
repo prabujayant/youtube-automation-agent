@@ -908,8 +908,8 @@ class RankedShortsService {
       ...args,
       '-filter_complex', filters.join(';'),
       ...maps,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
       '-shortest', '-movflags', '+faststart', outputPath
     ]);
   }
@@ -920,8 +920,8 @@ class RankedShortsService {
       '-f', 'lavfi', '-i', `color=c=0x0B0B12:s=${this.width}x${this.height}:r=30:d=${seconds}`,
       '-f', 'lavfi', '-i', `anullsrc=r=48000:cl=stereo:d=${seconds}`,
       '-vf', 'setsar=1,format=yuv420p',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-      '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
       '-t', String(seconds), '-movflags', '+faststart', outputPath
     ]);
   }
@@ -1104,8 +1104,8 @@ class RankedShortsService {
       ...args,
       '-filter_complex', filter,
       '-map', '[v]', '-map', audioMap,
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
       '-movflags', '+faststart', outputPath
     ]);
   }
