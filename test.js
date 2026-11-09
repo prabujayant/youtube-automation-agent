@@ -2202,6 +2202,9 @@ class SystemTest {
       if (!/Which one would you do first/i.test(planned.description)) {
         throw new Error('Viral description lost its comment-driving question');
       }
+      if (!/Subscribe for a new destination/i.test(planned.description)) {
+        throw new Error('Viral description lost its subscribe prompt');
+      }
       if (!planned.tags.includes('travel')) {
         throw new Error('Viral tags are missing the travel topic');
       }
@@ -2249,10 +2252,12 @@ class SystemTest {
   async testQueueFiller() {
     const { nextSlotAfter, slotOf } = require('./scripts/ci-fill-queue');
     const cases = [
-      ['2026-11-08T06:50:00Z', '2026-11-08T13:30:00.000Z', 1],
-      ['2026-11-08T13:30:00Z', '2026-11-09T01:30:00.000Z', 0],
-      ['2026-11-08T01:30:00Z', '2026-11-08T13:30:00.000Z', 1],
-      ['2026-11-09T02:00:00Z', '2026-11-09T13:30:00.000Z', 1]
+      ['2026-11-08T00:00:00Z', '2026-11-08T01:30:00.000Z', 0],
+      ['2026-11-08T06:50:00Z', '2026-11-08T09:30:00.000Z', 1],
+      ['2026-11-08T09:30:00Z', '2026-11-08T16:30:00.000Z', 2],
+      ['2026-11-08T13:30:00Z', '2026-11-08T16:30:00.000Z', 2],
+      ['2026-11-08T16:30:00Z', '2026-11-09T01:30:00.000Z', 0],
+      ['2026-11-09T02:00:00Z', '2026-11-09T09:30:00.000Z', 1]
     ];
     for (const [from, expected, slot] of cases) {
       const next = nextSlotAfter(Date.parse(from));

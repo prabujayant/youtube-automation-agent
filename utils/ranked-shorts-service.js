@@ -764,7 +764,11 @@ class RankedShortsService {
         intro,
         '',
         ...(showcase ? [`📍 ${topic}`, '🌍 Save this for your next trip!'] : []),
-        ...(viral ? [`📍 ${topic}`, ...(options.viral?.cta ? [`👉 ${options.viral.cta}`] : [])] : []),
+        ...(viral ? [
+          `📍 ${topic}`,
+          ...(options.viral?.cta ? [`👉 ${options.viral.cta}`] : []),
+          '🔔 Subscribe for a new destination every day.'
+        ] : []),
         ...(options.musicCredit ? [`🎵 ${options.musicCredit}`] : []),
         ...(stockSources.length ? [`📷 Footage: ${stockSources.join('; ')}`] : []),
         ...(attributionRequired.length

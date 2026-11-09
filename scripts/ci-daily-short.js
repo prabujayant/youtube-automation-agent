@@ -9,6 +9,7 @@ const { MusicBedService } = require('../utils/music-bed-service');
 const { DESTINATIONS } = require('../utils/destination-rotation');
 
 const VIRAL_COUNT = 7;
+const SLOTS_PER_DAY = 3;
 
 function resolveTarget() {
   const rawDate = String(process.env.SHORTS_TARGET_DATE || '').trim();
@@ -28,10 +29,11 @@ function dayIndexFor(targetDate) {
   return Math.floor((Number.isFinite(dayMs) ? dayMs : Date.now()) / 86400000);
 }
 
-// First slot that uses the current rotation: 2026-11-15 13:30 UTC (19:00 IST),
-// the next empty slot when the list was refreshed. Anchoring on a fixed slot
-// keeps the destination deterministic for a given publish time across reruns.
-const ROTATION_START_SLOT = dayIndexFor('2026-11-15') * 2 + 1;
+// Rotation anchor: 2026-11-09 09:30 UTC (15:00 IST), the first slot filled from
+// the refreshed 30-destination list. A fixed anchor keeps the destination
+// deterministic for a given publish time across reruns; earlier slots wrap
+// around the end of the list.
+const ROTATION_START_SLOT = dayIndexFor('2026-11-09') * SLOTS_PER_DAY + 1;
 
 function topicOffset() {
   const value = Number(process.env.SHORTS_TOPIC_OFFSET);
@@ -40,7 +42,7 @@ function topicOffset() {
 
 function pickDestination(slot, targetDate) {
   if (process.env.SHORTS_TOPIC) return String(process.env.SHORTS_TOPIC).trim();
-  const globalSlot = dayIndexFor(targetDate) * 2 + slot;
+  const globalSlot = dayIndexFor(targetDate) * SLOTS_PER_DAY + slot;
   const index = globalSlot - ROTATION_START_SLOT + topicOffset();
   return DESTINATIONS[((index % DESTINATIONS.length) + DESTINATIONS.length) % DESTINATIONS.length];
 }
@@ -90,7 +92,7 @@ async function findExistingTarget(youtube, topic, publishAt) {
 }
 
 async function runSlot(options = {}) {
-  const slot = Number(options.slot) === 1 ? 1 : 0;
+  const slot = [0, 1, 2].includes(Number(options.slot)) ? Number(options.slot) : 0;
   const dryRun = options.dryRun === true;
   const requestedFormat = String(options.format || '').toLowerCase();
   const format = ['showcase', 'viral', 'ranked'].includes(requestedFormat) ? requestedFormat : 'viral';
@@ -144,7 +146,7 @@ async function runSlot(options = {}) {
       format,
       source: stock.provider,
       music: 'auto',
-      musicMood: slot === 1 ? 'viral-tropical' : 'viral-uplifting',
+      musicMood: slot % 2 === 1 ? 'viral-tropical' : 'viral-uplifting',
       // Offset too, so the two channels never publish the same track in the
       // same slot.
       musicDayIndex: dayIndexFor(targetDate) + slot + topicOffset(),
@@ -192,7 +194,8 @@ async function runSlot(options = {}) {
 if (require.main === module) {
   (async () => {
     const { publishAt } = resolveTarget();
-    const slot = Number(process.env.SHORTS_SLOT) === 1 ? 1 : 0;
+    const slotEnv = Number(process.env.SHORTS_SLOT);
+    const slot = [0, 1, 2].includes(slotEnv) ? slotEnv : 0;
     await runSlot({
       publishAt,
       slot,
