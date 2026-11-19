@@ -42,20 +42,34 @@ async function scheduledSlots() {
   const channel = await youtube.channels.list({ part: 'contentDetails', mine: true });
   const uploads = channel.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploads) return new Set();
-  const playlist = await youtube.playlistItems.list({
-    part: 'contentDetails',
-    playlistId: uploads,
-    maxResults: 50
-  });
-  const ids = (playlist.data.items || [])
-    .map(item => item.contentDetails?.videoId)
-    .filter(Boolean);
+  // Page through the whole uploads playlist. Reading only the newest 50 hid
+  // scheduled videos deeper in a long queue, so the filler re-uploaded slots
+  // that already existed and the channel published duplicate Shorts.
+  const ids = [];
+  let pageToken;
+  do {
+    const playlist = await youtube.playlistItems.list({
+      part: 'contentDetails',
+      playlistId: uploads,
+      maxResults: 50,
+      pageToken
+    });
+    ids.push(...(playlist.data.items || [])
+      .map(item => item.contentDetails?.videoId)
+      .filter(Boolean));
+    pageToken = playlist.data.nextPageToken;
+  } while (pageToken && ids.length < 500);
   if (!ids.length) return new Set();
-  const videos = await youtube.videos.list({ part: 'snippet,status', id: ids.join(',') });
   const scheduled = new Set();
-  for (const video of videos.data.items || []) {
-    if (!video.status?.publishAt || video.status.privacyStatus === 'public') continue;
-    scheduled.add(new Date(video.status.publishAt).toISOString().slice(0, 16));
+  for (let index = 0; index < ids.length; index += 50) {
+    const videos = await youtube.videos.list({
+      part: 'snippet,status',
+      id: ids.slice(index, index + 50).join(',')
+    });
+    for (const video of videos.data.items || []) {
+      if (!video.status?.publishAt || video.status.privacyStatus === 'public') continue;
+      scheduled.add(new Date(video.status.publishAt).toISOString().slice(0, 16));
+    }
   }
   return scheduled;
 }
@@ -64,7 +78,10 @@ async function main() {
   const count = Math.max(1, Math.min(20, Number(process.env.SHORTS_FILL_COUNT) || 10));
   const dryRun = String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true';
   const format = String(process.env.SHORTS_FORMAT || 'viral').toLowerCase();
-  const horizonMs = Date.now() + 30 * 86400000;
+  // A ten-day buffer is enough to survive several failed or capped upload runs,
+  // while a shorter horizon means a format change reaches the feed in days
+  // instead of sitting a month deep in the queue.
+  const horizonMs = Date.now() + 10 * 86400000;
   const existing = await scheduledSlots();
 
   console.log(`Filling up to ${count} empty slots from ${new Date().toISOString()}${dryRun ? ' (dry run)' : ''}`);
@@ -80,7 +97,7 @@ async function main() {
     cursor = publishAt.getTime();
     examined++;
     if (publishAt.getTime() > horizonMs) {
-      console.log('Stopping: the schedule is already 30 days deep');
+      console.log('Stopping: the schedule is already 10 days deep');
       break;
     }
     const key = publishAt.toISOString().slice(0, 16);

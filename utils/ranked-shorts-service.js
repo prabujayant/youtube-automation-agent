@@ -19,9 +19,45 @@ const SHOWCASE_DEFAULT_CLIPS = 8;
 const SHOWCASE_MAX_SECONDS = 24;
 const SHOWCASE_CLIP_SECONDS = 3;
 const VIRAL_DEFAULT_CLIPS = 7;
-const VIRAL_CLIP_SECONDS = 2.8;
-const VIRAL_HOOK_SECONDS = 1.4;
+// 2.2-second cuts plus a 1.2-second hook keep the first three seconds moving.
+// The old 2.8-second cuts made a ~20-second Short feel slow in the feed, and
+// completion is what decides whether a Short keeps getting distributed.
+const VIRAL_CLIP_SECONDS = 2.2;
+const VIRAL_HOOK_SECONDS = 1.2;
 const VIRAL_REASON_COUNT = 3;
+// The text model is often unavailable in CI, so every Short used to open with
+// the same "3 reasons to visit X" line and reuse the same three reasons. These
+// rotate deterministically by destination so the feed never looks templated.
+const VIRAL_HOOK_TEMPLATES = [
+  () => 'Wait for reason 3',
+  place => `Don't book ${place} yet`,
+  place => `${place} is not what you think`,
+  place => `3 reasons you'll book ${place}`,
+  () => 'The last reason sold me',
+  place => `Why everyone wants ${place}`,
+  place => `Save this before ${place}`,
+  place => `${place} in 15 seconds`
+];
+const VIRAL_REASON_POOL = [
+  place => `${place} at golden hour looks unreal`,
+  () => 'The food alone is worth the trip',
+  () => 'Views that stop you mid-step',
+  () => 'Every corner is a photo',
+  () => 'Mornings here are the best part',
+  () => 'You feel the history on every street',
+  () => 'The sunsets do the heavy lifting',
+  () => 'Local markets run on their own time',
+  () => 'The old town rewards getting lost',
+  () => 'Sunrise is worth setting an alarm',
+  () => 'The streets are made for wandering',
+  () => 'One day here is never enough'
+];
+const VIRAL_TITLE_TEMPLATES = [
+  (count, topic) => `${count} Reasons to Visit ${topic}`,
+  (count, topic) => `${count} Reasons ${topic} Belongs on Your List`,
+  (count, topic) => `${count} Reasons You'll Love ${topic}`,
+  (count, topic) => `${count} Reasons to Book ${topic}`
+];
 const VIRAL_FALLBACK_REASONS = [
   'The views stop you mid-step',
   'The food is a reason on its own',
@@ -185,6 +221,45 @@ function wrapAssText(value, maximum) {
   }
   if (line) lines.push(line);
   return lines.slice(0, 4).map(assSafe).join('\\N');
+}
+
+function hashString(value) {
+  let hash = 0;
+  for (const char of String(value || '')) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash;
+}
+
+// Keep the place name short enough for a 42-character hook without cutting a
+// word in half ("Maldives Overwater Villas" becomes "Maldives Overwater").
+function shortPlace(topic) {
+  const name = String(topic || '').split(',')[0].trim();
+  if (name.length <= 24) return name;
+  const words = name.split(/\s+/);
+  let out = '';
+  for (const word of words) {
+    const candidate = out ? `${out} ${word}` : word;
+    if (candidate.length > 24) break;
+    out = candidate;
+  }
+  return out || name.slice(0, 24).trim();
+}
+
+// Deterministic per destination, so a retry always renders the same copy while
+// different destinations get different hooks, reasons, and titles.
+function viralFallbacks(topic, reasonCount, hookOverride) {
+  const place = shortPlace(topic);
+  const seed = hashString(topic);
+  const hook = hookOverride || VIRAL_HOOK_TEMPLATES[seed % VIRAL_HOOK_TEMPLATES.length](place);
+  const reasons = [];
+  for (let index = 0; index < reasonCount; index++) {
+    const template = VIRAL_REASON_POOL[(seed + index * 5) % VIRAL_REASON_POOL.length];
+    reasons.push(truncate(template(place), 52));
+  }
+  return {
+    hook: truncate(overlayText(hook, 45), 42),
+    reasons,
+    title: VIRAL_TITLE_TEMPLATES[seed % VIRAL_TITLE_TEMPLATES.length](reasonCount, topic)
+  };
 }
 
 class RankedShortsService {
@@ -613,11 +688,12 @@ class RankedShortsService {
 
   async planViralMetadata(topic, reasonCount, hookOverride) {
     const shortName = topic.split(',')[0].trim() || topic;
+    const generated = viralFallbacks(topic, reasonCount, hookOverride);
     const fallback = {
-      hook: truncate(hookOverride || `${reasonCount} reasons to visit ${shortName}`, 45),
-      reasons: VIRAL_FALLBACK_REASONS.slice(0, reasonCount),
+      hook: generated.hook,
+      reasons: generated.reasons.slice(0, reasonCount),
       cta: 'Which one would you do first?',
-      title: withDestinationFlag(`${reasonCount} Reasons to Visit ${topic}`, topic),
+      title: withDestinationFlag(generated.title, topic),
       description: `Here are ${reasonCount} reasons ${shortName} belongs on your next trip.`,
       tags: ['travel', 'traveltok', 'shorts', 'bucketlist',
         ...topic.split(/[^a-z0-9]+/i).filter(word => word.length > 3).slice(0, 4)]
@@ -631,9 +707,9 @@ class RankedShortsService {
         `Destination: ${topic}`,
         `Write exactly ${reasonCount} concrete reasons to visit. Keep every claim plausible and avoid precise prices, dates, statistics, or named businesses.`,
         'Return JSON only, in this shape:',
-        `{"hook":"${reasonCount} reasons to visit ${shortName}","reasons":["...","..."],"cta":"Which one would you do first?","title":"${reasonCount} Reasons to Visit ${topic} 🌍","description":"Two short sentences about the destination.","tags":["travel","..."]}`,
+        `{"hook":"Don't book ${shortName} until reason 3","reasons":["...","..."],"cta":"Which one would you do first?","title":"${reasonCount} Reasons to Visit ${topic} 🌍","description":"Two short sentences about the destination.","tags":["travel","..."]}`,
         'Rules:',
-        `- hook: max 42 characters, no emoji, creates curiosity without clickbait that cannot be supported by the footage.`,
+        `- hook: max 40 characters, a curiosity gap that makes the viewer need reason ${reasonCount} (for example "Wait for reason ${reasonCount}" or "Don't book ${shortName} yet"). Never start with "N reasons to visit". No emoji.`,
         `- reasons: exactly ${reasonCount} strings, each max 52 characters, starting with a concrete image or experience (for example "Soak in a geothermal lagoon"). No emoji.`,
         '- cta: max 30 characters, a question that invites comments. No emoji.',
         `- title: max 85 characters, includes "${reasonCount} Reasons", the destination, and at most one flag emoji.`,
@@ -656,8 +732,11 @@ class RankedShortsService {
         /reason/i.test(parsedTitle) && parsedTitle.length >= 10 ? parsedTitle : fallback.title,
         topic
       );
+      const aiHook = truncate(overlayText(parsed.hook || '', 45), 42);
+      const genericHook = /^\d+\s+reasons?\s+to\s+visit/i.test(aiHook);
+      const hook = hookOverride || (aiHook && !genericHook ? aiHook : fallback.hook);
       return {
-        hook: truncate(overlayText(hookOverride || parsed.hook || fallback.hook, 45), 45),
+        hook: truncate(overlayText(hook, 45), 42),
         reasons,
         cta: truncate(overlayText(parsed.cta || fallback.cta, 30), 30),
         title,
@@ -862,7 +941,7 @@ class RankedShortsService {
         finalPath,
         captionsPath,
         musicPath,
-        format === 'viral' ? { clipVolume: 0.35, musicVolume: 0.5 } : {}
+        format === 'viral' ? { clipVolume: 0.3, musicVolume: 0.55 } : {}
       );
 
       const stats = await fs.stat(finalPath);
@@ -947,11 +1026,16 @@ class RankedShortsService {
         `[soft][front]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p[v]`
       );
     } else if (options.motion === 'zoom') {
-      // A slow push-in makes the rapid cuts feel intentional instead of static.
+      // Alternate a fast push-in with a pull-out on every cut so the frame is
+      // always moving. A 2.2-second clip needs a visible move, not a drift.
+      const pullOut = Number(clip.rank) % 2 === 0;
+      const zoom = pullOut
+        ? `z='max(1.24-0.004*on,1.0)'`
+        : `z='min(zoom+0.004,1.24)'`;
       filters.push(
         `[0:v]scale=${this.width}:${this.height}:force_original_aspect_ratio=increase,` +
         `crop=${this.width}:${this.height},setsar=1,fps=30,` +
-        `zoompan=z='min(zoom+0.0015,1.10)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +
+        `zoompan=${zoom}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':` +
         `d=1:s=${this.width}x${this.height}:fps=30,format=yuv420p[v]`
       );
     } else {
@@ -1076,16 +1160,20 @@ class RankedShortsService {
       '',
       '[V4+ Styles]',
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-      `Style: Hook,${this.fontName},96,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,8,80,80,520,1`,
-      `Style: Reason,${this.fontName},60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,2,70,70,300,1`,
-      `Style: Cta,${this.fontName},76,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,5,80,80,0,1`,
+      `Style: Hook,${this.fontName},104,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,8,70,70,420,1`,
+      `Style: Reason,${this.fontName},70,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,2,64,64,300,1`,
+      `Style: Cta,${this.fontName},82,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,5,70,70,0,1`,
       '',
       '[Events]',
       'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
       ...cues
         .filter(cue => cue.end > cue.start && cue.text)
         .map(cue => {
-          const fade = cue.style === 'Hook' ? '{\\fad(0,120)}' : '{\\fad(80,80)}';
+          // The hook pops in on the first frame; reasons cut in hard so the
+          // text changes with every clip instead of drifting in late.
+          const fade = cue.style === 'Hook'
+            ? '{\\fad(0,60)\\fscx94\\fscy94\\t(0,140,\\fscx100\\fscy100)}'
+            : '{\\fad(40,40)}';
           return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},${cue.style},,0,0,0,,${fade}${cue.text}`;
         }),
       ''

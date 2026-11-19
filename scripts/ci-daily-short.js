@@ -59,22 +59,38 @@ async function findExistingTarget(youtube, topic, publishAt) {
   const uploads = channel.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploads) return null;
 
-  const playlist = await youtube.playlistItems.list({
-    part: 'contentDetails',
-    playlistId: uploads,
-    maxResults: 50
-  });
-  const ids = (playlist.data.items || [])
-    .map(item => item.contentDetails?.videoId)
-    .filter(Boolean);
+  // Read every upload, not just the newest page: a deep scheduled queue pushes
+  // older slots past the first 50 videos, and missing them caused duplicate
+  // uploads for the same publish time.
+  const ids = [];
+  let pageToken;
+  do {
+    const playlist = await youtube.playlistItems.list({
+      part: 'contentDetails',
+      playlistId: uploads,
+      maxResults: 50,
+      pageToken
+    });
+    ids.push(...(playlist.data.items || [])
+      .map(item => item.contentDetails?.videoId)
+      .filter(Boolean));
+    pageToken = playlist.data.nextPageToken;
+  } while (pageToken && ids.length < 500);
   if (!ids.length) return null;
 
-  const videos = await youtube.videos.list({ part: 'snippet,status', id: ids.join(',') });
+  const videos = [];
+  for (let index = 0; index < ids.length; index += 50) {
+    const page = await youtube.videos.list({
+      part: 'snippet,status',
+      id: ids.slice(index, index + 50).join(',')
+    });
+    videos.push(...(page.data.items || []));
+  }
   const targetMs = publishAt.getTime();
   const targetDay = publishAt.toISOString().slice(0, 10);
   const wanted = normalize(topic);
 
-  for (const video of videos.data.items || []) {
+  for (const video of videos) {
     const scheduledMs = video.status?.publishAt ? Date.parse(video.status.publishAt) : NaN;
     if (Number.isFinite(scheduledMs) && Math.abs(scheduledMs - targetMs) <= 15 * 60 * 1000) {
       return { video, reason: 'publishAt' };

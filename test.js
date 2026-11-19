@@ -2228,15 +2228,26 @@ class SystemTest {
         throw new Error('Viral format should burn an ASS overlay, not an SRT');
       }
       const overlay = await fs.readFile(rendered.assets.captions.path, 'utf8');
-      // Hook text is word-wrapped in the ASS file, so check for key words.
-      if (!overlay.includes('reasons') || !overlay.includes('visit') || !overlay.includes('Iceland') || !overlay.includes('1.')) {
+      // Hook text is word-wrapped in the ASS file, so compare on a flat string.
+      const flatOverlay = overlay.replace(/\\N/g, ' ');
+      const hookLead = String(planned.hook || '').split(' ').slice(0, 2).join(' ');
+      if (!hookLead || !flatOverlay.includes(hookLead) || !overlay.includes('1.')) {
         throw new Error('Viral overlay lost its hook or numbered reasons');
       }
       // CTA text is word-wrapped in the ASS file (\N line breaks).
       if (!overlay.includes('Which one would you') || !overlay.includes('do first?')) {
         throw new Error('Viral overlay lost its comment CTA');
       }
-      if (rendered.duration < 17 || rendered.duration > 22) {
+      // Without a text provider, fallback copy must still differ by destination
+      // instead of shipping the same "3 reasons to visit X" script everywhere.
+      const otherCopy = await service.planViralMetadata('Bali Indonesia', 3);
+      if (
+        otherCopy.hook === planned.hook &&
+        otherCopy.reasons.join('|') === (planned.assets?.viral?.reasons || []).join('|')
+      ) {
+        throw new Error('Viral fallback copy is not destination-specific');
+      }
+      if (rendered.duration < 13.5 || rendered.duration > 17.5) {
         throw new Error(`Viral duration ${rendered.duration}s does not match seven fast cuts`);
       }
       await runFFmpeg(['-v', 'error', '-i', videoPath, '-f', 'null', '-']);
