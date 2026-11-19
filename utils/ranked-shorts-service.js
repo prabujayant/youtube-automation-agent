@@ -709,7 +709,7 @@ class RankedShortsService {
         'Return JSON only, in this shape:',
         `{"hook":"Don't book ${shortName} until reason 3","reasons":["...","..."],"cta":"Which one would you do first?","title":"${reasonCount} Reasons to Visit ${topic} 🌍","description":"Two short sentences about the destination.","tags":["travel","..."]}`,
         'Rules:',
-        `- hook: max 40 characters, a curiosity gap that makes the viewer need reason ${reasonCount} (for example "Wait for reason ${reasonCount}" or "Don't book ${shortName} yet"). Never start with "N reasons to visit". No emoji.`,
+        `- hook: max 38 characters, a curiosity gap that makes the viewer need reason ${reasonCount} (for example "Wait for reason ${reasonCount}" or "Don't book ${shortName} yet"). Never start with "N reasons to visit". No emoji.`,
         `- reasons: exactly ${reasonCount} strings, each max 52 characters, starting with a concrete image or experience (for example "Soak in a geothermal lagoon"). No emoji.`,
         '- cta: max 30 characters, a question that invites comments. No emoji.',
         `- title: max 85 characters, includes "${reasonCount} Reasons", the destination, and at most one flag emoji.`,
@@ -732,9 +732,13 @@ class RankedShortsService {
         /reason/i.test(parsedTitle) && parsedTitle.length >= 10 ? parsedTitle : fallback.title,
         topic
       );
-      const aiHook = truncate(overlayText(parsed.hook || '', 45), 42);
+      const rawAiHook = overlayText(parsed.hook || '');
+      const aiHook = truncate(rawAiHook, 45);
       const genericHook = /^\d+\s+reasons?\s+to\s+visit/i.test(aiHook);
-      const hook = hookOverride || (aiHook && !genericHook ? aiHook : fallback.hook);
+      // Reject an over-long AI hook rather than shipping one cut mid-word
+      // ("Don't book Seoul South Korea until reason."). The deterministic hook
+      // is shorter and always complete.
+      const hook = hookOverride || (aiHook && !genericHook && rawAiHook.length <= 40 ? aiHook : fallback.hook);
       return {
         hook: truncate(overlayText(hook, 45), 42),
         reasons,
@@ -1160,9 +1164,9 @@ class RankedShortsService {
       '',
       '[V4+ Styles]',
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-      `Style: Hook,${this.fontName},104,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,8,70,70,420,1`,
-      `Style: Reason,${this.fontName},70,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,2,64,64,300,1`,
-      `Style: Cta,${this.fontName},82,&H00FFFFFF,&H00FFFFFF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,0,0,5,70,70,0,1`,
+      `Style: Hook,${this.fontName},104,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,8,3,8,70,70,420,1`,
+      `Style: Reason,${this.fontName},70,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,64,64,300,1`,
+      `Style: Cta,${this.fontName},82,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,7,2,5,70,70,0,1`,
       '',
       '[Events]',
       'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
