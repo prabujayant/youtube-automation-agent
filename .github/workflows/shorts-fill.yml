@@ -19,6 +19,10 @@ on:
       count:
         description: 'Slots per channel (default: 10 primary / 4 zentrox)'
         required: false
+      days:
+        description: 'Keep the queue this many days deep (default: 14)'
+        required: false
+        default: '14'
       dry_run:
         description: Render the Shorts but skip the YouTube upload
         type: boolean
@@ -99,6 +103,7 @@ jobs:
       - name: Fill the publish slots
         env:
           SHORTS_FILL_COUNT: ${{ inputs.count || matrix.default_count }}
+          SHORTS_FILL_DAYS: ${{ inputs.days || '14' }}
           SHORTS_DRY_RUN: ${{ inputs.dry_run }}
           SHORTS_FORMAT: viral
           SHORTS_TOPIC_OFFSET: ${{ matrix.offset }}

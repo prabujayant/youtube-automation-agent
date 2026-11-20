@@ -78,10 +78,11 @@ async function main() {
   const count = Math.max(1, Math.min(20, Number(process.env.SHORTS_FILL_COUNT) || 10));
   const dryRun = String(process.env.SHORTS_DRY_RUN || '').toLowerCase() === 'true';
   const format = String(process.env.SHORTS_FORMAT || 'viral').toLowerCase();
-  // A ten-day buffer is enough to survive several failed or capped upload runs,
-  // while a shorter horizon means a format change reaches the feed in days
-  // instead of sitting a month deep in the queue.
-  const horizonMs = Date.now() + 10 * 86400000;
+  // How far ahead the queue is kept. Two weeks survives a long outage while a
+  // format change still reaches the feed in days rather than a month, and it is
+  // shallow enough that the daily upload cap can actually reach the end of it.
+  const horizonDays = Math.max(1, Math.min(60, Number(process.env.SHORTS_FILL_DAYS) || 14));
+  const horizonMs = Date.now() + horizonDays * 86400000;
   const existing = await scheduledSlots();
 
   console.log(`Filling up to ${count} empty slots from ${new Date().toISOString()}${dryRun ? ' (dry run)' : ''}`);
@@ -97,7 +98,7 @@ async function main() {
     cursor = publishAt.getTime();
     examined++;
     if (publishAt.getTime() > horizonMs) {
-      console.log('Stopping: the schedule is already 10 days deep');
+      console.log(`Stopping: the schedule is already ${horizonDays} days deep`);
       break;
     }
     const key = publishAt.toISOString().slice(0, 16);
